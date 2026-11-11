@@ -376,7 +376,7 @@ const STEP={
       ${noEnd?`<p class="err">還沒填下班時間。</p>`:""}
       ${hrs!=null&&hrs<0?`<p class="err">下班時間比上班早，請檢查時間。</p>`:""}
       ${!entryReady()?`<div class="warn">表單欄位還沒設定完成，送出後會存到「紀錄」，可以逐項複製貼到表單。</div>`:""}
-      <div class="spacer"></div><button type="button" class="cta" data-submit ${noEnd||(hrs!=null&&hrs<0)?"disabled":""}>打開表單，按提交就完成</button>`;
+      <div class="spacer"></div><button type="button" class="cta" data-submit>打開表單，按提交就完成</button>`;
   },
   /* 補登：一頁填完 */
   manual:d=>{
@@ -457,7 +457,7 @@ document.addEventListener("click",e=>{
   const sn=t.closest("[data-setnow]");if(sn){$("f").value=floor5(new Date()).time;setTimeout(()=>commit(sn.dataset.setnow),120);return}
   const adj=t.closest("[data-adj]");if(adj){const f=$("f"),cur=normTime(f.value)||floor5(new Date()).time;let[h,m]=cur.split(":").map(Number);let tot=(h*60+m+(+adj.dataset.adj)+1440)%1440;f.value=`${pad(Math.floor(tot/60))}:${pad(tot%60)}`;setErr("");return}
   const jp=t.closest("[data-jump]");if(jp){S.wiz.editOnly=jp.dataset.jump;S.dir="";render();return}
-  if(t.closest("[data-submit]")){submitForm();return}
+  if(t.closest("[data-submit]")){const d=S.wiz.data,h=shiftHours(d);if(!d.endTime){toast("還沒填下班時間，點「下班」那一行填");return}if(h!=null&&h<0){toast("下班時間比上班早，點「下班」那一行改");return}if(!d.event){toast("還沒選活動，點「活動」那一行");return}submitForm();return}
   /* 補登頁 */
   const msd=t.closest("[data-msd]");if(msd){S.wiz.data.raw.sd=mmdd(msd.dataset.msd);render();return}
   const mev=t.closest("[data-mev]");if(mev){S.wiz.data.raw.ev=mev.dataset.mev;render();return}
@@ -552,7 +552,7 @@ function viewImport(){
     return head+`<h2 class="q">確認行程</h2><p class="qhint">共 ${out.length} 筆。名字有錯可以先匯入，再到行事曆刪掉重加。</p>
       ${out.length?`<div class="card">${out.map(e=>{const d=parseYmd(e.date);return`<div class="ev"><span class="d">${d.getMonth()+1}/${d.getDate()}<small>週${WD[d.getDay()]}</small></span><span class="n">${esc(e.name)}<small>${[e.end?`到 ${nice(e.end)}`:"",e.time].filter(Boolean).join(" · ")}</small></span></div>`}).join("")}</div>`:`<div class="empty">沒有讀到行程。請確認貼上的是 AI 回的那段文字。</div>`}
       ${bad.length?`<div class="warn">這幾行看不懂，不會匯入：<br>${bad.map(esc).join("<br>")}</div>`:""}
-      <div class="spacer"></div><button type="button" class="cta" data-impgo ${out.length?"":"disabled"}>匯入 ${out.length} 筆</button></div>`;
+      <div class="spacer"></div><button type="button" class="cta" data-impgo>${out.length?`匯入 ${out.length} 筆`:"匯入"}</button></div>`;
   }
   return head+`<h2 class="q">從截圖匯入行程</h2>
     <ol class="imp"><li>按「複製提示詞」。</li><li>打開 Claude 或 ChatGPT App，貼上提示詞，再附上行事曆截圖送出。</li><li>把 AI 回的整段文字複製，回來貼在下面。</li></ol>
@@ -569,7 +569,7 @@ document.addEventListener("click",e=>{
   if(t.closest("[data-impcancel]")){if(S.imp.step==="preview")S.imp.step="paste";else S.imp=null;saveImp();render();return}
   if(t.closest("[data-copyprompt]")){const p=calPrompt();(navigator.clipboard?navigator.clipboard.writeText(p):Promise.reject()).then(()=>toast("已複製提示詞，去 AI App 貼上")).catch(()=>{S.imp.showPrompt=true;render();toast("請長按下面的文字自己複製")});return}
   if(t.closest("[data-impcheck]")){const v=$("impText").value;if(!v.trim()){toast("先把 AI 回的文字貼上");return}S.imp.text=v;S.imp.step="preview";saveImp();render();window.scrollTo(0,0);return}
-  if(t.closest("[data-impgo]")){const{out}=parseCal(S.imp.text);const n=applyImport(out);S.imp=null;saveImp();toast(`已匯入 ${out.length} 筆行程`);render();window.scrollTo(0,0);return}
+  if(t.closest("[data-impgo]")){const{out}=parseCal(S.imp.text);if(!out.length){toast("沒有讀到行程，按「上一步」重新貼上");return}const n=applyImport(out);S.imp=null;saveImp();toast(`已匯入 ${out.length} 筆行程`);render();window.scrollTo(0,0);return}
 });
 
 /* ===== 紀錄 ===== */
