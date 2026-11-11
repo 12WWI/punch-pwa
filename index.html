@@ -214,6 +214,13 @@ function mmddToYmd(raw,ref){const s=String(raw||"").replace(/[^\d]/g,"");if(s.le
 function minutesOf(date,time){const[h,m]=time.split(":").map(Number);return parseYmd(date).getTime()/6e4+h*60+m}
 function shiftHours(s){if(!s.startDate||!s.startTime||!s.endDate||!s.endTime)return null;let w=minutesOf(s.endDate,s.endTime)-minutesOf(s.startDate,s.startTime);if(s.breakStart&&s.breakEnd){let b=minutesOf("2000-01-01",s.breakEnd)-minutesOf("2000-01-01",s.breakStart);if(b<0)b+=1440;w-=b}return w/60}
 const fmtH=h=>h==null?"":(Math.round(h*100)/100)+" 小時";
+const addDays=(ymdStr,n)=>{const x=parseYmd(ymdStr);return ymd(new Date(x.getFullYear(),x.getMonth(),x.getDate()+n))};
+/* 上班時間改了以後，日期挑「不晚於下班（或現在）」最近的那一天：半夜後改成 0600 就是前一天的 06:00 */
+function fitStartDate(d,time){const ref=d.endDate&&d.endTime?minutesOf(d.endDate,d.endTime):Date.now()/6e4;const base=d.startDate||today();for(const n of[1,0,-1]){const c=addDays(base,n);if(minutesOf(c,time)<=ref)return c}return addDays(base,-1)}
+/* 休息要在上下班之間（可以跨午夜） */
+function breakOk(d){if(!d.breakStart||!d.breakEnd||!d.endTime)return true;const s0=minutesOf(d.startDate,d.startTime),e0=minutesOf(d.endDate,d.endTime);let b1=minutesOf(d.startDate,d.breakStart);if(b1<s0)b1+=1440;let b2=minutesOf(d.startDate,d.breakEnd);while(b2<=b1)b2+=1440;return b2<=e0}
+/* 送出前檢查：時數不能是負的或 0、休息要在上下班之間 */
+function timeProblem(d){if(!d.endTime)return"";const h=shiftHours(d);if(minutesOf(d.endDate,d.endTime)<=minutesOf(d.startDate,d.startTime))return"下班時間比上班早，請點「上班」或「下班」修改。";if(!breakOk(d))return"休息時間不在上下班之間，請點「休息」修改。";if(h!=null&&h<=0)return"扣掉休息後時數是 0，請檢查休息時間。";return""}
 let tt;function toast(m){const t=$("toast");t.textContent=m;t.hidden=false;clearTimeout(tt);tt=setTimeout(()=>t.hidden=true,2600)}
 function buzz(){try{navigator.vibrate&&navigator.vibrate(12)}catch(_){}}
 const IC={
@@ -233,7 +240,6 @@ const punched=(name,d)=>history.some(h=>h.startDate===d&&h.status!=="pending"&&e
 function eventsOn(d){return cal.filter(e=>e.date<=d&&d<=(e.end||e.date)&&!punched(e.name,d)).sort((a,b)=>(a.time||"").localeCompare(b.time||"")||a.name.localeCompare(b.name,"zh-Hant"))}
 /* 凌晨 6 點前，昨天的場次也一起列（跨夜場） */
 function dayEvents(ref){const t=today();ref=ref||t;const list=eventsOn(ref).map(e=>({...e,tag:""}));if(ref===t&&new Date().getHours()<6){const y=ymd(new Date(Date.now()-864e5));for(const e of eventsOn(y))if(!list.some(x=>x.name===e.name))list.push({...e,tag:"昨天"})}return list}
-function recentNames(exclude){const seen=new Set(exclude);const out=[];for(const h of[...history].reverse()){for(const n of evNames(h)){if(!seen.has(n)){seen.add(n);out.push(n)}}if(out.length>=4)break}return out.slice(0,4)}
 
 /* ===== 表單網址 ===== */
 const entryReady=()=>!!FORM_ID&&REQUIRED_KEYS.every(k=>ENTRY[k]);
@@ -330,10 +336,11 @@ function finish(){
   const w=S.wiz,d=w.data;
   if(w.flow==="setup"){profile.email=d.email;profile.name=d.name;save();S.wiz=null;toast("設定好了，之後不用再填");render();return}
 }
-function finishEdit(){const d=S.wiz.data;shift={...shift,startTime:d.startTime};save();S.wiz=null;toast("已更新");render()}
+function finishEdit(){const d=S.wiz.data;shift={...shift,startDate:d.startDate,startTime:d.startTime};save();S.wiz=null;toast("已更新");render()}
 function editShift(){S.wiz=newWiz("edit",{...shift});S.wiz.editOnly="startTime";S.wiz.returnTo="home";render()}
 function submitForm(){
   const w=S.wiz,d=w.data;
+  {const pr=timeProblem(d);if(pr){if(w.flow==="manual")return setErr(pr);toast(pr);return}}
   const events=d.events.map(e=>({name:e.name,transport:e.transport}));
   const trs=w.flow==="manual"?[...d.trs]:[...new Set(events.map(e=>e.transport).filter(Boolean))];
   const rec={id:rid(),event:events.map(e=>e.name).join("、"),events,startDate:d.startDate,startTime:d.startTime,breakStart:d.breakStart||"",breakEnd:d.breakEnd||"",endDate:d.endDate,endTime:d.endTime,transport:trs,trNote:w.flow==="manual"?"":trNoteOf(events),openedAt:new Date().toISOString(),status:"pending"};
@@ -356,13 +363,12 @@ function viewWizard(){
   h+=STEP[k](d,w);
   return h+`</div>`;
 }
-/* 下班時可選的活動：上班那天＋下班那天的行事曆，再加最近打過的 */
+/* 下班時可選的活動：上班那天＋下班那天的行事曆（已經打過卡的不列） */
 function outOptions(d){
   const seen=new Set(),out=[];
   const add=(n,s)=>{if(!n||seen.has(n))return;seen.add(n);out.push({n,s})};
   for(const e of eventsOn(d.startDate))add(e.name,(e.end&&e.end!==e.date?`行事曆 ${nice(e.date)}–${nice(e.end)}`:"行事曆")+(e.time?` · ${e.time}`:""));
   if(d.endDate&&d.endDate!==d.startDate)for(const e of eventsOn(d.endDate))add(e.name,"行事曆（下班那天）");
-  for(const n of recentNames([...seen]))add(n,"最近打卡過");
   for(const e of d.events)add(e.name,"自己輸入");
   return out;
 }
@@ -401,7 +407,7 @@ const STEP={
     const same=new Set(d.events.map(e=>e.transport)).size<=1;
     const tv=d.events.length?(same?esc(tLabel(d.events[0].transport)):d.events.map(e=>`${esc(e.name)}：${esc(tLabel(e.transport))}`).join("<br>")):"";
     const row=(label,val,step)=>`<button type="button" class="crow" data-jump="${step}"><span class="k">${label}</span><span class="v${val?"":" none"}">${val||"（沒有）"}</span>${IC.chev}</button>`;
-    return`<h2 class="q">確認一下</h2><p class="qhint">點任何一行可以修改。${hrs!=null?`這次共 <b class="num" style="font-size:18px">${fmtH(hrs)}</b>`:""}</p>
+    return`<h2 class="q">確認一下</h2><p class="qhint">點任何一行可以修改。${hrs!=null&&!timeProblem(d)?`這次共 <b class="num" style="font-size:18px">${fmtH(hrs)}</b>`:""}</p>${timeProblem(d)?`<div class="warn">${esc(timeProblem(d))}</div>`:""}
       <div class="card review">
         ${row("活動",esc(d.events.map(e=>e.name).join("、")),"events")}
         ${row("上班",`<span class="num" style="font-size:19px">${md(d.startDate)}　${d.startTime}</span>`,"startTime")}
@@ -416,7 +422,7 @@ const STEP={
   /* 補登：一頁填完 */
   manual:d=>{
     const r=d.raw,p=manualParse(d);
-    const evs=p.sd?eventsOn(p.sd):[],names=[...evs.map(e=>e.name),...recentNames(evs.map(e=>e.name))].slice(0,8);
+    const evs=p.sd?eventsOn(p.sd):[],names=evs.map(e=>e.name).slice(0,8);
     const days=[0,1,2].map(n=>ymd(new Date(Date.now()-n*864e5)));
     const typed=r.ev.split("、").map(x=>x.trim());
     return`<h2 class="q">補登一筆</h2><p class="qhint">時間輸入 4 碼，例如 0830。下班比上班早就算隔天。</p>
@@ -444,6 +450,7 @@ function manualSubmit(){
   if(!p.st||!p.et)return setErr("請填上班和下班時間，例如 0830 和 1800。");
   if((r.b1.trim()||r.b2.trim())&&!(p.b1&&p.b2))return setErr("休息要填開始和結束，沒有就兩格都空白。");
   if(!d.trs.length)return setErr("請選交通方式。");
+  if(p.b1&&p.b2&&!breakOk({startDate:p.sd,startTime:p.st,endDate:p.ed,endTime:p.et,breakStart:p.b1,breakEnd:p.b2}))return setErr("休息時間要在上班和下班之間。");
   Object.assign(d,{events:names.map(n=>({name:n,transport:""})),startDate:p.sd,startTime:p.st,endDate:p.ed,endTime:p.et,breakStart:p.b1&&p.b2?p.b1:"",breakEnd:p.b1&&p.b2?p.b2:""});
   submitForm();
 }
@@ -465,10 +472,10 @@ function commit(key){
   if(key==="name"){const v=f.value.trim();if(!v)return setErr("請輸入名字。");d.name=v;return next()}
   if(key==="events"){if(f&&f.value.trim())addEvent(d,f.value);if(!d.events.length)return setErr("請至少選一個活動，或輸入名稱。");fillLegs(d);return next()}
   if(key==="legs"){const miss=d.events.findIndex(e=>!e.transport);if(miss>=0)return setErr(`「${d.events[miss].name}」還沒選交通方式。`);return next()}
-  if(key==="startTime"){const v=normTime(f.value);if(!v)return setErr("時間格式是 4 碼，例如 0830。");d.startTime=v;return next()}
+  if(key==="startTime"){const v=normTime(f.value);if(!v)return setErr("時間格式是 4 碼，例如 0830。");d.startDate=fitStartDate(d,v);d.startTime=v;return next()}
   /* 下班日期自動判斷：比上班時間早就是隔天 */
   if(key==="endTime"){const v=normTime(f.value);if(!v)return setErr("時間格式是 4 碼，例如 0830。");d.endTime=v;if(d.startDate&&d.startTime)d.endDate=v>=d.startTime?d.startDate:nextDay(d.startDate);return next()}
-  if(key==="break"){const a=$("b1").value.trim(),b=$("b2").value.trim();if(!a&&!b){d.breakStart="";d.breakEnd="";return next()}const x=normTime(a),y=normTime(b);if(!x||!y)return setErr("休息時間要填開始和結束，例如 1230 和 1330。");d.breakStart=x;d.breakEnd=y;return next()}
+  if(key==="break"){const a=$("b1").value.trim(),b=$("b2").value.trim();if(!a&&!b){d.breakStart="";d.breakEnd="";return next()}const x=normTime(a),y=normTime(b);if(!x||!y)return setErr("休息時間要填開始和結束，例如 1230 和 1330。");const t={...d,breakStart:x,breakEnd:y};if(!breakOk(t))return setErr("休息時間要在上班和下班之間。");d.breakStart=x;d.breakEnd=y;return next()}
 }
 const colonize=v=>{const s=v.replace(/[^\d]/g,"").slice(0,4);return s.length>2?s.slice(0,2)+":"+s.slice(2):s};
 function afterRender(){
@@ -501,7 +508,7 @@ document.addEventListener("click",e=>{
   const sn=t.closest("[data-setnow]");if(sn){$("f").value=floor5(new Date()).time;setErr("");return}
   const adj=t.closest("[data-adj]");if(adj){const f=$("f"),cur=normTime(f.value)||floor5(new Date()).time;let[h,m]=cur.split(":").map(Number);let tot=(h*60+m+(+adj.dataset.adj)+1440)%1440;f.value=`${pad(Math.floor(tot/60))}:${pad(tot%60)}`;setErr("");return}
   const jp=t.closest("[data-jump]");if(jp){S.wiz.editOnly=jp.dataset.jump;S.dir="";render();return}
-  if(t.closest("[data-submit]")){const d=S.wiz.data,h=shiftHours(d);if(!d.events.length){toast("還沒選活動，點「活動」那一行");return}if(!d.endTime){toast("還沒填下班時間，點「下班」那一行填");return}if(h!=null&&h<0){toast("下班時間比上班早，點「下班」那一行改");return}if(d.events.some(x=>!x.transport)){toast("交通還沒選完，點「交通」那一行");return}submitForm();return}
+  if(t.closest("[data-submit]")){const d=S.wiz.data;if(!d.events.length){toast("還沒選活動，點「活動」那一行");return}if(!d.endTime){toast("還沒填下班時間，點「下班」那一行填");return}{const pr=timeProblem(d);if(pr){toast(pr);return}}if(d.events.some(x=>!x.transport)){toast("交通還沒選完，點「交通」那一行");return}submitForm();return}
   /* 補登頁 */
   const msd=t.closest("[data-msd]");if(msd){S.wiz.data.raw.sd=mmdd(msd.dataset.msd);render();return}
   const mev=t.closest("[data-mev]");if(mev){const r=S.wiz.data.raw,list=r.ev.split("、").map(x=>x.trim()).filter(Boolean),n=mev.dataset.mev;r.ev=(list.includes(n)?list.filter(x=>x!==n):[...list,n]).join("、");render();return}
