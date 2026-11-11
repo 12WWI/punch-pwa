@@ -245,7 +245,7 @@ function formUrl(r){
   put("breakStart",r.breakStart);put("breakEnd",r.breakEnd);
   put("endDate",mmdd(r.endDate));put("endTime",r.endTime);
   /* 交通是複選題：每種都勾；不在選項裡的寫進「其他」 */
-  if(ENTRY.transport){const ts=toArr(r.transport),other=ts.filter(t=>!TRANSPORT.includes(t));ts.filter(t=>TRANSPORT.includes(t)).forEach(t=>p.append(ENTRY.transport,t));if(other.length){p.append(ENTRY.transport,"__other_option__");p.append(ENTRY.transport+".other_option_response",other.join("、"))}}
+  if(ENTRY.transport){const ts=toArr(r.transport),other=r.trNote||ts.filter(t=>!TRANSPORT.includes(t)).join("、");ts.filter(t=>TRANSPORT.includes(t)).forEach(t=>p.append(ENTRY.transport,t));if(other){p.append(ENTRY.transport,"__other_option__");p.append(ENTRY.transport+".other_option_response",other)}}
   return`https://docs.google.com/forms/d/e/${FORM_ID}/viewform?${p.toString()}`;
 }
 
@@ -294,6 +294,8 @@ function viewHome(){
 }
 function floor5Out(){const f=floor5(new Date());return{endDate:f.date,endTime:f.time}}
 function tLabel(t){return TRANSPORT_LABEL[t]?TRANSPORT_LABEL[t][0]:(t||"")}
+/* 兩場以上、交通不一樣：寫進交通的「其他」說明哪一場怎麼去 */
+function trNoteOf(evs){return evs&&evs.length>1&&new Set(evs.map(e=>e.transport)).size>1?evs.map(e=>`${e.name} ${tLabel(e.transport)}`).join(" → "):""}
 const tList=r=>toArr(r.transport).map(tLabel).join("、");
 /* 表單打開了不代表送出了：回到 App 時問一下 */
 function pendCard(){
@@ -334,7 +336,7 @@ function submitForm(){
   const w=S.wiz,d=w.data;
   const events=d.events.map(e=>({name:e.name,transport:e.transport}));
   const trs=w.flow==="manual"?[...d.trs]:[...new Set(events.map(e=>e.transport).filter(Boolean))];
-  const rec={id:rid(),event:events.map(e=>e.name).join("、"),events,startDate:d.startDate,startTime:d.startTime,breakStart:d.breakStart||"",breakEnd:d.breakEnd||"",endDate:d.endDate,endTime:d.endTime,transport:trs,openedAt:new Date().toISOString(),status:"pending"};
+  const rec={id:rid(),event:events.map(e=>e.name).join("、"),events,startDate:d.startDate,startTime:d.startTime,breakStart:d.breakStart||"",breakEnd:d.breakEnd||"",endDate:d.endDate,endTime:d.endTime,transport:trs,trNote:w.flow==="manual"?"":trNoteOf(events),openedAt:new Date().toISOString(),status:"pending"};
   if(w.flow==="out"&&shift)rec.prevShift=shift;
   history.push(rec);if(trs[0]&&TRANSPORT.includes(trs[0]))profile.transport=trs[0];
   if(w.flow==="out")shift=null;
@@ -407,6 +409,7 @@ const STEP={
         ${row("下班",noEnd?"":`<span class="num" style="font-size:19px">${md(d.endDate)}　${d.endTime}</span>`,"endTime")}
         ${row("交通",tv,"legs")}
       </div>
+      ${trNoteOf(d.events)?`<p class="qhint" style="margin:0">交通不一樣，表單的「其他」會寫：${esc(trNoteOf(d.events))}</p>`:""}
       ${!entryReady()?`<div class="warn">表單欄位還沒設定完成，送出後會存到「紀錄」，可以逐項複製貼到表單。</div>`:""}
       <div class="spacer"></div><button type="button" class="cta" data-submit>打開表單，按提交就完成</button>`;
   },
@@ -623,7 +626,7 @@ function viewHist(){
     <div class="quick" style="justify-content:flex-start">${months.slice(0,6).map(m=>`<button type="button" class="pill" data-month="${m}" style="${m===key?"border-color:var(--in);color:var(--in);font-weight:700":""}">${+m.slice(5)} 月</button>`).join("")}</div>
     <div class="total"><span>${+key.slice(5)} 月共 ${list.length} 次</span><b>${fmtH(total)}</b></div>
     ${list.length?`<div class="card">${list.map(h=>`<div class="ev" style="flex-wrap:wrap"><span class="d">${mmdd(h.startDate).replace(/^(\d\d)(\d\d)$/,(_,a,b)=>`${+a}/${+b}`)}<small>週${WD[parseYmd(h.startDate).getDay()]}</small></span><span class="n">${esc(h.event)}<small class="num" style="font-size:15px">${h.startTime} – ${h.endTime}${h.endDate!==h.startDate?"（隔天）":""} · ${fmtH(shiftHours(h))}${h.status==="pending"?` · <span style="color:var(--in)">還沒確認送出</span>`:""}</small></span><button type="button" class="x" data-reopen="${h.id}">${entryReady()?"再開表單":"複製"}</button><button type="button" class="x" data-delhist="${h.id}">刪除</button>
-      ${S.copy===h.id?`<div style="flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;padding-top:8px">${[["Email",profile.email],["活動",h.event],["姓名",profile.name],["上班日期",mmdd(h.startDate)],["上班時間",h.startTime],["休息開始",h.breakStart],["休息結束",h.breakEnd],["下班日期",mmdd(h.endDate)],["下班時間",h.endTime],["交通",toArr(h.transport).join("、")]].filter(x=>x[1]).map(([l,v])=>`<button type="button" class="pill" data-copy="${esc(v)}">${l}：${esc(v)}</button>`).join("")}</div>`:""}</div>`).join("")}</div>`:`<div class="empty">這個月還沒有打卡紀錄。</div>`}
+      ${S.copy===h.id?`<div style="flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;padding-top:8px">${[["Email",profile.email],["活動",h.event],["姓名",profile.name],["上班日期",mmdd(h.startDate)],["上班時間",h.startTime],["休息開始",h.breakStart],["休息結束",h.breakEnd],["下班日期",mmdd(h.endDate)],["下班時間",h.endTime],["交通",toArr(h.transport).join("、")],["交通其他",h.trNote]].filter(x=>x[1]).map(([l,v])=>`<button type="button" class="pill" data-copy="${esc(v)}">${l}：${esc(v)}</button>`).join("")}</div>`:""}</div>`).join("")}</div>`:`<div class="empty">這個月還沒有打卡紀錄。</div>`}
     <p class="qhint" style="margin:0">紀錄只存在這支手機上。「再開表單」會重新打開填好的表單，不會重複送出，除非你再按一次提交。</p></div>`;
 }
 document.addEventListener("click",e=>{const m=e.target.closest("[data-month]");if(m){S.month=m.dataset.month;render()}});
