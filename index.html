@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>打卡</title>
+<meta name="theme-color" content="#16191C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="打卡">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&display=swap">
+<style>
+/* Layout: one-screen app. Home = giant punch button (orange = 上班, blue = 下班); wizards show one question per screen and auto-advance. Look matches 器材調度板: road-case greys + gaffer-tape label. */
+:root{
+  --bg:#ECEEF1; --surface:#FFFFFF; --surface2:#F3F5F7; --ink:#15181B; --muted:#5F6770; --line:#D9DDE2;
+  --in:#C9701E; --in-soft:#F6E3CF; --out:#2C6AAE; --out-soft:#DCE7F4; --on:#FFFFFF;
+  --ok:#2E8457; --ok-soft:#DAEFE2; --bad:#C23B2A;
+  --tape:#F2EDE0; --tape-ink:#1C1A16; --tape-edge:#DCD4BF;
+  --glass:rgba(246,247,249,.9); --shadow:0 1px 2px rgba(20,24,28,.06),0 8px 24px rgba(20,24,28,.08);
+  --f-num:"Barlow Condensed",system-ui,sans-serif;
+  --f-body:system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#0F1113; --surface:#1A1D20; --surface2:#23272B; --ink:#ECEEF0; --muted:#9AA2AB; --line:#2D3237;
+  --in:#E8913E; --in-soft:#3A2814; --out:#6EA8E6; --out-soft:#152638; --on:#0F1113;
+  --ok:#55B983; --ok-soft:#163124; --bad:#F06A57;
+  --glass:rgba(22,24,27,.9); --shadow:0 1px 2px rgba(0,0,0,.4); color-scheme:dark;
+}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.5;-webkit-tap-highlight-color:transparent;overscroll-behavior:none;-webkit-user-select:none;user-select:none}
+input,textarea{-webkit-user-select:text;user-select:text}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--in);outline-offset:2px}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+svg.i{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+#app{min-height:100%;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px)}
+.screen{flex:1;display:flex;flex-direction:column;padding:12px max(18px,env(safe-area-inset-left,0px)) calc(96px + env(safe-area-inset-bottom,0px)) max(18px,env(safe-area-inset-right,0px));max-width:560px;width:100%;margin:0 auto;gap:16px}
+.screen.full{padding-bottom:calc(20px + env(safe-area-inset-bottom,0px))}
+.fade{animation:fade .22s ease-out}
+@keyframes fade{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
+.fade.back{animation-name:fadeb}
+@keyframes fadeb{from{opacity:0;transform:translateX(-18px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.fade{animation:none}}
+
+/* home */
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px}
+.top h1{margin:0;font-size:15px;font-weight:500;color:var(--muted)}
+.top .date{font-family:var(--f-num);font-size:34px;font-weight:700;line-height:1}
+.clock{font-family:var(--f-num);font-size:20px;color:var(--muted);text-align:right}
+.tape{align-self:flex-start;max-width:100%;background:var(--tape);color:var(--tape-ink);border:1px solid var(--tape-edge);padding:2px 12px;font-weight:700;font-size:14px;letter-spacing:.04em;transform:rotate(-1.2deg);clip-path:polygon(2% 0,98% 4%,100% 50%,98% 100%,1% 96%,0 50%);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hero{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;min-height:300px}
+.punch{width:min(72vw,280px);aspect-ratio:1;border-radius:50%;border:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--on);font-weight:700;font-size:22px;box-shadow:0 14px 40px rgba(0,0,0,.22),inset 0 -6px 0 rgba(0,0,0,.12);transition:transform .1s}
+.punch:active{transform:scale(.96)}
+.punch.in{background:var(--in)}
+.punch.out{background:var(--out)}
+.punch b{font-family:var(--f-num);font-size:62px;line-height:1;letter-spacing:.02em}
+.punch small{font-size:14px;font-weight:500;opacity:.85}
+.status{text-align:center;display:flex;flex-direction:column;gap:2px;align-items:center}
+.status .big{font-size:18px;font-weight:700}
+.status .sub{font-size:14px;color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.crow{display:flex;align-items:center;gap:12px;width:100%;padding:13px 16px;border:0;border-bottom:1px solid var(--line);background:transparent;text-align:left;min-height:52px}
+.crow:last-child{border-bottom:0}
+button.crow:active{background:var(--surface2)}
+.crow .k{color:var(--muted);font-size:14px;width:76px;flex:none}
+.crow .v{flex:1;min-width:0;font-weight:500;overflow-wrap:anywhere}
+.crow .v.none{color:var(--muted);font-weight:400}
+.chev{width:18px;height:18px;color:var(--muted)}
+.linkbtn{border:0;background:transparent;color:var(--in);font-weight:600;font-size:15px;padding:8px;align-self:center}
+.sech{font-family:var(--f-num);font-size:14px;letter-spacing:.12em;color:var(--muted);text-transform:uppercase;margin:4px 4px -6px}
+
+/* wizard */
+.wtop{display:flex;align-items:center;gap:8px;min-height:44px}
+.back{border:0;background:transparent;color:var(--in);display:flex;align-items:center;font-size:16px;padding:6px 6px 6px 0}
+.dots{flex:1;display:flex;gap:5px;justify-content:center}
+.dots i{width:22px;height:4px;border-radius:2px;background:var(--line)}
+.dots i.on{background:var(--in)}
+.wflow-out .dots i.on{background:var(--out)}
+.skip{border:0;background:transparent;color:var(--muted);font-size:15px;padding:6px 0 6px 6px;min-width:44px;text-align:right}
+.q{margin:18px 0 0;font-size:28px;font-weight:700;line-height:1.3;text-wrap:balance}
+.qhint{margin:-6px 0 0;color:var(--muted);font-size:14.5px}
+.field{width:100%;background:var(--surface);border:2px solid var(--line);border-radius:16px;padding:16px 18px;font-size:20px;outline:none}
+.field:focus{border-color:var(--in)}
+.wflow-out .field:focus{border-color:var(--out)}
+.field.bigtime{font-family:var(--f-num);font-size:56px;font-weight:700;text-align:center;letter-spacing:.04em;padding:10px}
+.err{color:var(--bad);font-size:14.5px;margin:-4px 0 0;min-height:1.2em}
+.chips{display:flex;flex-direction:column;gap:10px}
+.chip{display:flex;align-items:center;gap:14px;width:100%;border:2px solid var(--line);background:var(--surface);border-radius:16px;padding:14px 16px;text-align:left;font-size:17px;font-weight:600;min-height:60px}
+.chip:active{transform:scale(.99)}
+.chip .lt{width:34px;height:34px;border-radius:10px;background:var(--surface2);display:grid;place-items:center;font-family:var(--f-num);font-size:20px;font-weight:700;color:var(--muted);flex:none}
+.chip small{display:block;font-size:13px;font-weight:400;color:var(--muted)}
+.chip.on{border-color:var(--in);background:var(--in-soft)}
+.chip.on .lt{background:var(--in);color:var(--on)}
+.wflow-out .chip.on{border-color:var(--out);background:var(--out-soft)}
+.wflow-out .chip.on .lt{background:var(--out)}
+.quick{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.pill{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:8px 14px;font-size:15px;font-weight:500}
+.pill:active{background:var(--surface2)}
+.spacer{flex:1}
+.cta{width:100%;border:0;border-radius:16px;padding:17px;font-size:18px;font-weight:700;color:var(--on);background:var(--in)}
+.wflow-out .cta,.cta.blue{background:var(--out)}
+.cta.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+.cta:disabled{opacity:.4}
+.or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+.inline{display:flex;gap:8px}
+.inline .field{flex:1;min-width:0;font-size:17px;padding:13px 14px}
+.inline button{flex:none;border:0;border-radius:14px;background:var(--in);color:var(--on);font-weight:700;padding:0 18px}
+.breakrow{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center}
+.breakrow .field{font-family:var(--f-num);font-size:34px;font-weight:700;text-align:center;padding:10px 6px}
+.breakrow span{color:var(--muted)}
+.review .crow .v{font-size:16.5px}
+.warn{background:var(--in-soft);border-radius:14px;padding:12px 14px;font-size:14px;line-height:1.55}
+
+/* lists */
+.lt1{margin:6px 0 0;font-family:var(--f-num);font-size:36px;font-weight:700;line-height:1}
+.ev{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.ev:last-child{border-bottom:0}
+.ev .d{width:54px;flex:none;font-family:var(--f-num);font-size:20px;font-weight:700;line-height:1.1}
+.ev .d small{display:block;font-family:var(--f-body);font-size:11.5px;font-weight:400;color:var(--muted)}
+.ev .n{flex:1;min-width:0;overflow-wrap:anywhere;font-weight:500}
+.ev .n small{display:block;font-size:13px;color:var(--muted);font-weight:400}
+.ev .x{border:0;background:transparent;color:var(--muted);font-size:14px;padding:6px}
+.ev .x.armed{color:var(--bad);font-weight:700}
+.empty{border:1px dashed var(--line);border-radius:16px;padding:22px;color:var(--muted);text-align:center;font-size:14.5px;background:var(--surface)}
+.total{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px 16px;display:flex;justify-content:space-between;align-items:baseline}
+.total b{font-family:var(--f-num);font-size:34px;line-height:1}
+.total span{color:var(--muted);font-size:14px}
+.addbox{display:flex;flex-direction:column;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px}
+.addbox .row{display:flex;gap:8px;align-items:center}
+.addbox label{font-size:13px;color:var(--muted);width:36px;flex:none}
+.addbox input{flex:1;min-width:0;border:1px solid var(--line);background:var(--surface2);border-radius:11px;padding:11px 12px;font-size:16px}
+
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;background:var(--glass);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-top:1px solid var(--line);padding:0 env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
+nav.tabs button{flex:1;border:0;background:transparent;display:flex;flex-direction:column;align-items:center;gap:1px;padding:8px 0 9px;font-size:11.5px;color:var(--muted)}
+nav.tabs button[aria-current="page"]{color:var(--in);font-weight:700}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(100px + env(safe-area-inset-bottom,0px));z-index:9;background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-size:15px;max-width:calc(100% - 40px);text-align:center}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<nav class="tabs" id="tabs" hidden></nav>
+<div class="toast" id="toast" role="status" hidden></div>
+<script>
+/* ===== 表單設定 =====
+   表單資訊不寫在程式裡：第一次使用時貼上設定碼，只存在這支手機。 */
+const ENTRY_KEYS=["email","event","name","startDate","startTime","breakStart","breakEnd","endDate","endTime","transport"];
+let FORM_ID="",ENTRY={};
+function useCode(raw){try{const o=JSON.parse(atob(String(raw).replace(/\s/g,"")));if(typeof o.f!=="string"||!o.f||!Array.isArray(o.e)||o.e.length!==ENTRY_KEYS.length||!o.e.every(x=>typeof x==="string"&&x))return false;FORM_ID=o.f;ENTRY=Object.fromEntries(ENTRY_KEYS.map((k,i)=>[k,o.e[i]]));return true}catch(_){return false}}
+try{useCode(localStorage.getItem("punch.code")||"")}catch(_){}
+const TRANSPORT=["公司集合","自行前往（開車）來回","自行前往（機車）來回","大眾運輸"];
+const TRANSPORT_LABEL={"公司集合":["公司集合","一起從公司出發"],"自行前往（開車）來回":["自己開車","來回"],"自行前往（機車）來回":["自己騎車","來回"],"大眾運輸":["大眾運輸","捷運、公車、高鐵"]};
+
+/* ===== storage ===== */
+const DB={get(k,d){try{const v=localStorage.getItem("punch."+k);return v==null?d:JSON.parse(v)}catch(_){return d}},set(k,v){try{localStorage.setItem("punch."+k,JSON.stringify(v))}catch(_){}}};
+let profile=DB.get("profile",{email:"",name:"",transport:""});
+let cal=DB.get("cal",[]);            // [{id,date,end,name}]
+let shift=DB.get("shift",null);      // 上班中的紀錄
+let history=DB.get("history",[]);    // 送出過的紀錄
+const save=()=>{DB.set("profile",profile);DB.set("cal",cal);DB.set("shift",shift);DB.set("history",history)};
+
+/* ===== helpers ===== */
+const $=id=>document.getElementById(id);
+const WD=["日","一","二","三","四","五","六"];
+const pad=n=>String(n).padStart(2,"0");
+const ymd=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const parseYmd=s=>{const[y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d)};
+const today=()=>ymd(new Date());
+const mmdd=s=>s?s.slice(5,7)+s.slice(8,10):"";
+const md=s=>s?`${+s.slice(5,7)}/${+s.slice(8,10)}`:"";
+const nice=s=>{if(!s)return"";const d=parseYmd(s);return`${d.getMonth()+1}/${d.getDate()}（${WD[d.getDay()]}）`};
+const esc=t=>String(t??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const rid=()=>Math.random().toString(36).slice(2,9)+Date.now().toString(36);
+/* 打卡時間：往前取到 5 分鐘（11:07 → 11:05，11:13 → 11:10） */
+function floor5(d){return{date:ymd(d),time:`${pad(d.getHours())}:${pad(Math.floor(d.getMinutes()/5)*5)}`}}
+function normTime(raw){const s=String(raw||"").replace(/[^\d]/g,"");if(s.length<3)return null;const h=+s.slice(0,s.length-2),m=+s.slice(-2);if(h>23||m>59)return null;return`${pad(h)}:${pad(m)}`}
+function mmddToYmd(raw,ref){const s=String(raw||"").replace(/[^\d]/g,"");if(s.length!==4)return null;const m=+s.slice(0,2),d=+s.slice(2);if(m<1||m>12||d<1||d>31)return null;const r=ref?parseYmd(ref):new Date();let y=r.getFullYear();let c=new Date(y,m-1,d);if(c.getMonth()!==m-1)return null;if(c-r>60*864e5)c=new Date(y-1,m-1,d);if(r-c>300*864e5)c=new Date(y+1,m-1,d);return ymd(c)}
+function minutesOf(date,time){const[h,m]=time.split(":").map(Number);return parseYmd(date).getTime()/6e4+h*60+m}
+function shiftHours(s){if(!s.startDate||!s.startTime||!s.endDate||!s.endTime)return null;let w=minutesOf(s.endDate,s.endTime)-minutesOf(s.startDate,s.startTime);if(s.breakStart&&s.breakEnd){let b=minutesOf("2000-01-01",s.breakEnd)-minutesOf("2000-01-01",s.breakStart);if(b<0)b+=1440;w-=b}return w/60}
+const fmtH=h=>h==null?"":(Math.round(h*100)/100)+" 小時";
+let tt;function toast(m){const t=$("toast");t.textContent=m;t.hidden=false;clearTimeout(tt);tt=setTimeout(()=>t.hidden=true,2600)}
+function buzz(){try{navigator.vibrate&&navigator.vibrate(12)}catch(_){}}
+const IC={
+  back:'<svg class="i" viewBox="0 0 24 24" style="width:26px;height:26px"><path d="M15 5l-7 7 7 7"/></svg>',
+  chev:'<svg class="i chev" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>',
+  clock:'<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
+  cal:'<svg class="i" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16.5" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/></svg>',
+  list:'<svg class="i" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>',
+  gear:'<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+};
+
+/* ===== 行事曆 → 今天的活動選項 ===== */
+function eventsOn(d){return cal.filter(e=>e.date<=d&&d<=(e.end||e.date)).sort((a,b)=>a.name.localeCompare(b.name,"zh-Hant"))}
+function recentNames(exclude){const seen=new Set(exclude);const out=[];for(const h of[...history].reverse()){if(h.event&&!seen.has(h.event)){seen.add(h.event);out.push(h.event)}if(out.length>=4)break}return out}
+
+/* ===== 表單網址 ===== */
+const entryReady=()=>!!FORM_ID&&ENTRY_KEYS.every(k=>ENTRY[k]);
+function formUrl(r){
+  const p=new URLSearchParams({usp:"pp_url"});
+  const put=(k,v)=>{const id=ENTRY[k];if(!id||v==null||v==="")return;p.append(id,v)};
+  put("email",profile.email);put("event",r.event);put("name",profile.name);
+  put("startDate",mmdd(r.startDate));put("startTime",r.startTime);
+  put("breakStart",r.breakStart);put("breakEnd",r.breakEnd);
+  put("endDate",mmdd(r.endDate));put("endTime",r.endTime);
+  if(ENTRY.transport&&r.transport){if(TRANSPORT.includes(r.transport))p.append(ENTRY.transport,r.transport);else{p.append(ENTRY.transport,"__other_option__");p.append(ENTRY.transport+".other_option_response",r.transport)}}
+  return`https://docs.google.com/forms/d/e/${FORM_ID}/viewform?${p.toString()}`;
+}
+
+/* ===== router ===== */
+let S={tab:"home",wiz:null,dir:""};
+function render(){
+  const a=$("app");
+  if(!entryReady()){$("tabs").hidden=true;a.innerHTML=`<div class="screen fade"><h2 class="q">貼上設定碼</h2><p class="qhint">第一次使用要輸入一次，之後不用再填。設定碼只存在這支手機。</p><textarea class="field" id="code" rows="5" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="設定碼"></textarea><button type="button" class="cta" data-savecode>確定</button></div>`;return}
+  if(!profile.email||!profile.name){if(!S.wiz||S.wiz.flow!=="setup")S.wiz=newWiz("setup")}
+  $("tabs").hidden=!!S.wiz;
+  a.innerHTML=S.wiz?viewWizard():S.tab==="home"?viewHome():S.tab==="cal"?viewCal():S.tab==="hist"?viewHist():viewSettings();
+  renderTabs();afterRender();
+}
+function renderTabs(){$("tabs").innerHTML=[["home","打卡",IC.clock],["cal","行事曆",IC.cal],["hist","紀錄",IC.list],["set","設定",IC.gear]].map(([k,l,i])=>`<button type="button" data-tab="${k}" aria-current="${S.tab===k?"page":"false"}">${i}${l}</button>`).join("")}
+$("tabs").addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(!b)return;S.tab=b.dataset.tab;S.dir="";render();window.scrollTo(0,0)});
+
+/* ===== 首頁 ===== */
+function viewHome(){
+  const now=new Date(),t=today();
+  let h=`<div class="screen fade"><div class="top"><div><h1>${esc(profile.name)}，${now.getHours()<12?"早安":now.getHours()<18?"午安":"辛苦了"}</h1><div class="date">${now.getMonth()+1}/${now.getDate()} 週${WD[now.getDay()]}</div></div><div class="clock num" id="clk">${pad(now.getHours())}:${pad(now.getMinutes())}</div></div>`;
+  if(!shift){
+    const evs=eventsOn(t);const f=floor5(now);
+    h+=`<div class="hero"><button type="button" class="punch in" data-go="in"><small>上班打卡</small><b class="num" id="pt">${f.time}</b><small>按下記錄這個時間</small></button>
+      <div class="status"><span class="sub">${evs.length?`今天行事曆：${evs.map(e=>esc(e.name)).join("、")}`:"今天行事曆沒有活動，打卡時可以手動輸入"}</span></div></div>
+      <button type="button" class="linkbtn" data-go="manual">忘了打卡？手動補登一筆</button>`;
+  }else{
+    const hrs=shiftHours({...shift,...floor5Out()});
+    h+=`<span class="tape">${esc(shift.event||"還沒選活動")}</span>
+      <div class="hero"><button type="button" class="punch out" data-go="out"><small>下班打卡</small><b class="num" id="pt">${floor5(now).time}</b><small>按下記錄這個時間</small></button>
+      <div class="status"><span class="big">上班中 · ${nice(shift.startDate)} ${shift.startTime} 起</span><span class="sub num">${hrs!=null&&hrs>=0?"已經 "+fmtH(hrs):""}</span></div></div>
+      <div class="card">
+        <button type="button" class="crow" data-edit="event"><span class="k">活動</span><span class="v">${esc(shift.event)}</span>${IC.chev}</button>
+        <button type="button" class="crow" data-edit="start"><span class="k">上班</span><span class="v num" style="font-size:19px">${md(shift.startDate)}　${shift.startTime}</span>${IC.chev}</button>
+        <button type="button" class="crow" data-edit="transport"><span class="k">交通</span><span class="v">${esc(tLabel(shift.transport))}</span>${IC.chev}</button>
+      </div>
+      <button type="button" class="linkbtn" data-cancelshift>取消這次上班打卡</button>`;
+  }
+  return h+`</div>`;
+}
+function floor5Out(){const f=floor5(new Date());return{endDate:f.date,endTime:f.time}}
+function tLabel(t){return TRANSPORT_LABEL[t]?TRANSPORT_LABEL[t][0]:(t||"")}
+
+/* ===== 精靈（一題一頁，選完自動下一題） ===== */
+const FLOWS={
+  setup:["email","name"],
+  in:["event","transport"],
+  out:["break","review"],
+  manual:["event","startDate","startTime","break","endDate","endTime","transport","review"],
+};
+function newWiz(flow,data={}){return{flow,i:0,data,editOnly:null,err:""}}
+function startIn(){const f=floor5(new Date());S.wiz=newWiz("in",{startDate:f.date,startTime:f.time,event:"",transport:profile.transport||""});buzz();S.dir="";render()}
+function startOut(){const f=floor5(new Date());S.wiz=newWiz("out",{...shift,endDate:f.date,endTime:f.time,breakStart:shift.breakStart||"",breakEnd:shift.breakEnd||""});buzz();S.dir="";render()}
+function startManual(){const t=today();S.wiz=newWiz("manual",{event:"",startDate:t,startTime:"",breakStart:"",breakEnd:"",endDate:t,endTime:"",transport:profile.transport||""});S.dir="";render()}
+function stepKey(){const w=S.wiz;return w.editOnly||FLOWS[w.flow][w.i]}
+function next(){
+  const w=S.wiz;S.dir="";w.err="";
+  if(w.editOnly){w.editOnly=null;if(w.returnTo==="home"){finishEdit();return}render();return}
+  if(w.i<FLOWS[w.flow].length-1){w.i++;render();return}
+  finish();
+}
+function back(){const w=S.wiz;S.dir="back";w.err="";if(w.editOnly){w.editOnly=null;if(w.returnTo==="home"){S.wiz=null}render();return}if(w.i>0){w.i--;render();return}if(w.flow==="setup"&&!(profile.email&&profile.name))return;S.wiz=null;render()}
+function finish(){
+  const w=S.wiz,d=w.data;
+  if(w.flow==="setup"){profile.email=d.email;profile.name=d.name;save();S.wiz=null;toast("設定好了，之後不用再填");render();return}
+  if(w.flow==="in"){shift={event:d.event,startDate:d.startDate,startTime:d.startTime,transport:d.transport};if(d.transport)profile.transport=d.transport;save();S.wiz=null;toast(`已上班打卡 ${d.startTime}`);render();return}
+}
+function finishEdit(){const d=S.wiz.data;shift={...shift,event:d.event,startDate:d.startDate,startTime:d.startTime,transport:d.transport};save();S.wiz=null;toast("已更新");render()}
+function editShift(field){
+  const map={event:"event",start:"startTime",transport:"transport"};
+  S.wiz=newWiz("in",{...shift});S.wiz.editOnly=map[field];S.wiz.returnTo="home";render();
+}
+function submitForm(){
+  const d=S.wiz.data;
+  const rec={id:rid(),event:d.event,startDate:d.startDate,startTime:d.startTime,breakStart:d.breakStart||"",breakEnd:d.breakEnd||"",endDate:d.endDate,endTime:d.endTime,transport:d.transport,openedAt:new Date().toISOString()};
+  history.push(rec);if(d.transport)profile.transport=d.transport;
+  if(S.wiz.flow==="out")shift=null;
+  save();
+  const url=formUrl(rec);
+  S.wiz=null;S.tab="home";render();
+  if(entryReady())window.open(url,"_blank")||(location.href=url);
+  else{S.tab="hist";render();toast("表單欄位還沒設定好，請用紀錄裡的「複製」手動貼上");}
+}
+
+function viewWizard(){
+  const w=S.wiz,k=stepKey(),d=w.data,steps=FLOWS[w.flow];
+  const dots=w.editOnly?"":`<div class="dots">${steps.map((_,i)=>`<i class="${i<=w.i?"on":""}"></i>`).join("")}</div>`;
+  const canBack=!(w.flow==="setup"&&w.i===0);
+  let h=`<div class="screen full fade ${S.dir} wflow-${w.flow==="out"?"out":"in"}"><div class="wtop">${canBack?`<button type="button" class="back" data-wback>${IC.back}${w.i===0||w.editOnly?"取消":"上一步"}</button>`:"<span></span>"}${dots||'<div class="dots"></div>'}<span class="skip"></span></div>`;
+  h+=STEP[k](d,w);
+  return h+`</div>`;
+}
+const STEP={
+  email:d=>`<h2 class="q">你的 Email</h2><p class="qhint">打卡表單要填的信箱，只需要設定一次。</p>
+    <input class="field" id="f" type="email" inputmode="email" autocomplete="email" enterkeyhint="next" placeholder="name@example.com" value="${esc(d.email||profile.email)}">
+    <p class="err" id="err"></p><div class="spacer"></div><button type="button" class="cta" data-ok="email">下一步</button>`,
+  name:d=>`<h2 class="q">你的名字</h2><p class="qhint">填表單上的姓名，之後會自動帶入。</p>
+    <input class="field" id="f" autocomplete="name" enterkeyhint="done" placeholder="你的姓名" value="${esc(d.name||profile.name)}">
+    <p class="err" id="err"></p><div class="spacer"></div><button type="button" class="cta" data-ok="name">完成</button>`,
+  event:d=>{
+    const ref=d.startDate||today(),evs=eventsOn(ref),rec=recentNames(evs.map(e=>e.name));
+    const opts=[...evs.map(e=>({n:e.name,s:e.end&&e.end!==e.date?`行事曆 ${nice(e.date)}–${nice(e.end)}`:"今天的行事曆"})),...rec.map(n=>({n,s:"最近打卡過"}))];
+    return`<h2 class="q">今天是哪個活動？</h2>
+      <div class="chips">${opts.map((o,i)=>`<button type="button" class="chip${d.event===o.n?" on":""}" data-pick="event" data-v="${esc(o.n)}"><span class="lt">${String.fromCharCode(65+i)}</span><span>${esc(o.n)}<small>${o.s}</small></span></button>`).join("")||`<div class="empty">${ref===today()?"今天":"這天"}的行事曆沒有活動，直接在下面輸入。<br>之後可以在「行事曆」先排好，打卡時點一下就好。</div>`}</div>
+      <div class="or">${opts.length?"或手動輸入":"手動輸入"}</div>
+      <div class="inline"><input class="field" id="f" enterkeyhint="next" placeholder="活動名稱" value="${esc(opts.some(o=>o.n===d.event)?"":d.event||"")}"><button type="button" data-ok="event">下一步</button></div>
+      <p class="err" id="err"></p>`;
+  },
+  transport:d=>`<h2 class="q">怎麼過去的？</h2>
+    <div class="chips">${TRANSPORT.map((t,i)=>`<button type="button" class="chip${d.transport===t?" on":""}" data-pick="transport" data-v="${esc(t)}"><span class="lt">${String.fromCharCode(65+i)}</span><span>${TRANSPORT_LABEL[t][0]}<small>${TRANSPORT_LABEL[t][1]}</small></span></button>`).join("")}</div>
+    <div class="or">其他方式</div>
+    <div class="inline"><input class="field" id="f" enterkeyhint="next" placeholder="例如：同事載" value="${esc(TRANSPORT.includes(d.transport)?"":d.transport||"")}"><button type="button" data-ok="transport">下一步</button></div>
+    <p class="err" id="err"></p>`,
+  startDate:d=>dateStep("上班日期",d.startDate,"startDate"),
+  endDate:d=>dateStep("下班日期",d.endDate,"endDate",d.startDate),
+  startTime:d=>timeStep("幾點上班？",d.startTime,"startTime"),
+  endTime:d=>timeStep("幾點下班？",d.endTime,"endTime"),
+  break:d=>`<h2 class="q">中間有休息嗎？</h2><p class="qhint">沒有就直接跳過，有的話輸入開始和結束時間（例如 1230）。</p>
+    <button type="button" class="chip${!d.breakStart&&!d.breakEnd?" on":""}" data-nobreak><span class="lt">A</span><span>沒有休息</span></button>
+    <div class="or">有休息</div>
+    <div class="breakrow"><input class="field" id="b1" inputmode="numeric" placeholder="開始" value="${esc(d.breakStart||"")}" aria-label="休息開始"><span>到</span><input class="field" id="b2" inputmode="numeric" placeholder="結束" value="${esc(d.breakEnd||"")}" aria-label="休息結束"></div>
+    <p class="err" id="err"></p><div class="spacer"></div><button type="button" class="cta" data-ok="break">下一步</button>`,
+  review:(d,w)=>{
+    const hrs=shiftHours(d);
+    const row=(k,label,val,step)=>`<button type="button" class="crow" data-jump="${step}"><span class="k">${label}</span><span class="v${val?"":" none"}">${val||"（沒有）"}</span>${IC.chev}</button>`;
+    return`<h2 class="q">確認一下</h2><p class="qhint">點任何一行可以修改。${hrs!=null?`這次共 <b class="num" style="font-size:18px">${fmtH(hrs)}</b>`:""}</p>
+      <div class="card review">
+        ${row("event","活動",esc(d.event),"event")}
+        ${row("s","上班",`<span class="num" style="font-size:19px">${md(d.startDate)}　${d.startTime}</span>`,"startTime")}
+        ${row("b","休息",d.breakStart&&d.breakEnd?`<span class="num" style="font-size:19px">${d.breakStart} – ${d.breakEnd}</span>`:"","break")}
+        ${row("e","下班",`<span class="num" style="font-size:19px">${md(d.endDate)}　${d.endTime}</span>`,"endTime")}
+        ${row("t","交通",esc(tLabel(d.transport)),"transport")}
+      </div>
+      <div class="card"><div class="crow"><span class="k">姓名</span><span class="v">${esc(profile.name)}</span></div><div class="crow"><span class="k">Email</span><span class="v">${esc(profile.email)}</span></div></div>
+      ${hrs!=null&&hrs<0?`<p class="err">下班時間比上班早，請檢查日期（跨夜要選隔天）。</p>`:""}
+      ${!entryReady()?`<div class="warn">表單欄位還沒設定完成，送出後會存到「紀錄」，可以逐項複製貼到表單。</div>`:""}
+      <div class="spacer"></div><button type="button" class="cta" data-submit ${hrs!=null&&hrs<0?"disabled":""}>打開表單，按提交就完成</button>`;
+  },
+};
+function dateStep(q,val,key,ref){
+  const t=today(),y=ymd(new Date(Date.now()-864e5)),tm=ymd(new Date(Date.now()+864e5));
+  return`<h2 class="q">${q}</h2><p class="qhint">輸入月日 4 碼（例如 1122），或點下面的日期。</p>
+    <input class="field bigtime" id="f" inputmode="numeric" maxlength="5" placeholder="MMDD" value="${val?mmdd(val):""}" data-date="${key}">
+    <div class="quick">${[[y,"昨天"],[t,"今天"],...(ref?[[ref,"同上班日"],[ymd(new Date(parseYmd(ref).getTime()+864e5)),"上班隔天"]]:[[tm,"明天"]])].filter((x,i,a)=>a.findIndex(z=>z[0]===x[0])===i).map(([v,l])=>`<button type="button" class="pill" data-setdate="${key}" data-v="${v}">${l} ${nice(v)}</button>`).join("")}</div>
+    <p class="err" id="err"></p><div class="spacer"></div><button type="button" class="cta" data-ok="${key}">下一步</button>`;
+}
+function timeStep(q,val,key){
+  const n=floor5(new Date()).time;
+  return`<h2 class="q">${q}</h2><p class="qhint">24 小時制，輸入 4 碼（例如 0830、2300）會自動跳下一題。</p>
+    <input class="field bigtime" id="f" inputmode="numeric" maxlength="5" placeholder="00:00" value="${val||""}" data-time="${key}">
+    <div class="quick"><button type="button" class="pill" data-adj="-5" data-k="${key}">−5 分</button><button type="button" class="pill" data-setnow="${key}">現在 ${n}</button><button type="button" class="pill" data-adj="5" data-k="${key}">+5 分</button></div>
+    <p class="err" id="err"></p><div class="spacer"></div><button type="button" class="cta" data-ok="${key}">下一步</button>`;
+}
+function setErr(m){const e=$("err");if(e)e.textContent=m||""}
+function commit(key){
+  const d=S.wiz.data,f=$("f");
+  if(key==="email"){const v=f.value.trim();if(!/^\S+@\S+\.\S+$/.test(v))return setErr("請輸入正確的 Email。");d.email=v;return next()}
+  if(key==="name"){const v=f.value.trim();if(!v)return setErr("請輸入名字。");d.name=v;return next()}
+  if(key==="event"){const v=f.value.trim()||d.event;if(!v)return setErr("請選一個活動或輸入名稱。");d.event=v;return next()}
+  if(key==="transport"){const v=f.value.trim()||d.transport;if(!v)return setErr("請選交通方式。");d.transport=v;return next()}
+  if(key==="startDate"||key==="endDate"){const v=mmddToYmd(f.value,today());if(!v)return setErr("日期格式是月日 4 碼，例如 1122。");d[key]=v;return next()}
+  if(key==="startTime"||key==="endTime"){const v=normTime(f.value);if(!v)return setErr("時間格式是 4 碼，例如 0830。");d[key]=v;return next()}
+  if(key==="break"){const a=$("b1").value.trim(),b=$("b2").value.trim();if(!a&&!b){d.breakStart="";d.breakEnd="";return next()}const x=normTime(a),y=normTime(b);if(!x||!y)return setErr("休息時間要填開始和結束，例如 1230 和 1330。");d.breakStart=x;d.breakEnd=y;return next()}
+}
+function afterRender(){
+  const f=$("f");
+  const numeric=f&&(f.dataset.time||f.dataset.date);
+  if(f&&S.wiz&&!/^(event|transport)$/.test(stepKey()))setTimeout(()=>{if(!f.isConnected)return;f.focus({preventScroll:true});try{numeric?f.select():f.setSelectionRange(f.value.length,f.value.length)}catch(_){}},180);
+  if(numeric){f.onfocus=()=>setTimeout(()=>{try{f.select()}catch(_){}},0);f.onclick=()=>{try{f.select()}catch(_){}}}
+  const auto=(key,ok)=>{clearTimeout(window.__adv);window.__adv=setTimeout(()=>{if($("f")===f&&stepKey()===key&&ok())commit(key)},260)};
+  if(f&&f.dataset.time)f.oninput=()=>{const s=f.value.replace(/[^\d]/g,"").slice(0,4);f.value=s.length>2?s.slice(0,2)+":"+s.slice(2):s;if(s.length===4){if(normTime(s))auto(f.dataset.time,()=>normTime(f.value));else setErr("沒有這個時間，請重新輸入。")}else setErr("")};
+  if(f&&f.dataset.date)f.oninput=()=>{const s=f.value.replace(/[^\d]/g,"").slice(0,4);f.value=s;if(s.length===4){if(mmddToYmd(s,today()))auto(f.dataset.date,()=>mmddToYmd(f.value,today()));else setErr("沒有這個日期，請重新輸入。")}else setErr("")};
+  for(const id of["b1","b2"]){const el=$(id);if(el)el.oninput=()=>{const s=el.value.replace(/[^\d]/g,"").slice(0,4);el.value=s.length>2?s.slice(0,2)+":"+s.slice(2):s;if(s.length===4&&id==="b1")$("b2").focus()}}
+  if(f)f.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();const ok=document.querySelector("[data-ok]");ok&&ok.click()}};
+}
+document.addEventListener("click",e=>{
+  const t=e.target;
+  const go=t.closest("[data-go]");if(go){({in:startIn,out:startOut,manual:startManual})[go.dataset.go]();return}
+  if(t.closest("[data-wback]")){back();return}
+  const ok=t.closest("[data-ok]");if(ok){commit(ok.dataset.ok);return}
+  const pk=t.closest("[data-pick]");if(pk){S.wiz.data[pk.dataset.pick]=pk.dataset.v;buzz();document.querySelectorAll(`[data-pick="${pk.dataset.pick}"]`).forEach(x=>x.classList.toggle("on",x===pk));setTimeout(next,160);return}
+  if(t.closest("[data-nobreak]")){S.wiz.data.breakStart="";S.wiz.data.breakEnd="";buzz();setTimeout(next,140);return}
+  const sd=t.closest("[data-setdate]");if(sd){S.wiz.data[sd.dataset.setdate]=sd.dataset.v;$("f").value=mmdd(sd.dataset.v);setTimeout(next,140);return}
+  const sn=t.closest("[data-setnow]");if(sn){$("f").value=floor5(new Date()).time;setTimeout(()=>commit(sn.dataset.setnow),120);return}
+  const adj=t.closest("[data-adj]");if(adj){const f=$("f"),cur=normTime(f.value)||floor5(new Date()).time;let[h,m]=cur.split(":").map(Number);let tot=(h*60+m+(+adj.dataset.adj)+1440)%1440;f.value=`${pad(Math.floor(tot/60))}:${pad(tot%60)}`;setErr("");return}
+  const jp=t.closest("[data-jump]");if(jp){S.wiz.editOnly=jp.dataset.jump;S.dir="";render();return}
+  if(t.closest("[data-submit]")){submitForm();return}
+  const ed=t.closest("[data-edit]");if(ed){editShift(ed.dataset.edit);return}
+  const cs=t.closest("[data-cancelshift]");if(cs){if(!cs.dataset.armed){cs.dataset.armed=1;cs.textContent="再按一次確定取消（紀錄會刪掉）";setTimeout(()=>{if(cs.isConnected){delete cs.dataset.armed;cs.textContent="取消這次上班打卡"}},3500);return}shift=null;save();toast("已取消上班打卡");render();return}
+  /* 行事曆 / 紀錄 / 設定 */
+  if(t.closest("[data-addcal]")){addCal();return}
+  const dc=t.closest("[data-delcal]");if(dc){if(!dc.dataset.armed){dc.dataset.armed=1;dc.textContent="確定刪除？";dc.classList.add("armed");setTimeout(()=>{if(dc.isConnected){delete dc.dataset.armed;dc.textContent="刪除";dc.classList.remove("armed")}},3000);return}cal=cal.filter(x=>x.id!==dc.dataset.delcal);save();render();return}
+  const ro=t.closest("[data-reopen]");if(ro){const r=history.find(x=>x.id===ro.dataset.reopen);if(r){if(entryReady())window.open(formUrl(r),"_blank");else{S.copy=S.copy===r.id?null:r.id;render()}}return}
+  const dh=t.closest("[data-delhist]");if(dh){if(!dh.dataset.armed){dh.dataset.armed=1;dh.textContent="確定刪除？";dh.classList.add("armed");setTimeout(()=>{if(dh.isConnected){delete dh.dataset.armed;dh.textContent="刪除";dh.classList.remove("armed")}},3000);return}history=history.filter(x=>x.id!==dh.dataset.delhist);save();render();return}
+  const cp=t.closest("[data-copy]");if(cp){const v=cp.dataset.copy;(navigator.clipboard?navigator.clipboard.writeText(v):Promise.reject()).then(()=>toast("已複製："+v)).catch(()=>toast(v));return}
+  const sp=t.closest("[data-setp]");if(sp){S.wiz=newWiz("setup",{...profile});S.wiz.i=sp.dataset.setp==="name"?1:0;render();return}
+  const st=t.closest("[data-settrans]");if(st){profile.transport=st.dataset.settrans;save();toast("已設定預設交通方式");render();return}
+  if(t.closest("[data-export]")){const blob=new Blob([JSON.stringify({profile,cal,history},null,1)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="打卡備份.json";a.click();return}
+});
+
+/* ===== 行事曆 ===== */
+function viewCal(){
+  const t=today(),up=cal.filter(e=>(e.end||e.date)>=t).sort((a,b)=>a.date.localeCompare(b.date)),past=cal.filter(e=>(e.end||e.date)<t).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,10);
+  const row=e=>{const d=parseYmd(e.date);return`<div class="ev"><span class="d">${d.getMonth()+1}/${d.getDate()}<small>週${WD[d.getDay()]}${e.end&&e.end!==e.date?" – "+nice(e.end):""}</small></span><span class="n">${esc(e.name)}</span><button type="button" class="x" data-delcal="${e.id}">刪除</button></div>`};
+  return`<div class="screen fade"><h1 class="lt1">行事曆</h1><p class="qhint" style="margin:0">先排好活動，打卡時就會出現 A、B、C 讓你點。</p>
+    <div class="addbox"><div class="row"><label for="cName">活動</label><input id="cName" placeholder="例如：週年晚會" enterkeyhint="done"></div>
+      <div class="row"><label for="cDate">日期</label><input id="cDate" type="date" value="${t}"><span style="color:var(--muted)">到</span><input id="cEnd" type="date" aria-label="結束日期（選填）"></div>
+      <button type="button" class="cta" data-addcal style="padding:13px">加入行事曆</button></div>
+    <div class="sech">接下來</div>${up.length?`<div class="card">${up.map(row).join("")}</div>`:`<div class="empty">還沒有排活動。</div>`}
+    ${past.length?`<div class="sech">之前</div><div class="card">${past.map(row).join("")}</div>`:""}</div>`;
+}
+function addCal(){
+  const n=$("cName").value.trim(),d=$("cDate").value,e=$("cEnd").value;
+  if(!n){toast("請輸入活動名稱");$("cName").focus();return}if(!d){toast("請選日期");return}
+  cal.push({id:rid(),name:n,date:d,end:e&&e>d?e:""});save();toast(`已加入 ${nice(d)} ${n}`);render();
+}
+
+/* ===== 紀錄 ===== */
+function viewHist(){
+  const now=new Date(),key=S.month||`${now.getFullYear()}-${pad(now.getMonth()+1)}`;
+  const months=[...new Set(history.map(h=>h.startDate.slice(0,7)))].sort().reverse();if(!months.includes(key))months.unshift(key);
+  const list=history.filter(h=>h.startDate.startsWith(key)).sort((a,b)=>b.startDate.localeCompare(a.startDate)||b.startTime.localeCompare(a.startTime));
+  const total=list.reduce((a,h)=>a+(shiftHours(h)||0),0);
+  return`<div class="screen fade"><h1 class="lt1">紀錄</h1>
+    <div class="quick" style="justify-content:flex-start">${months.slice(0,6).map(m=>`<button type="button" class="pill" data-month="${m}" style="${m===key?"border-color:var(--in);color:var(--in);font-weight:700":""}">${+m.slice(5)} 月</button>`).join("")}</div>
+    <div class="total"><span>${+key.slice(5)} 月共 ${list.length} 次</span><b>${fmtH(total)}</b></div>
+    ${list.length?`<div class="card">${list.map(h=>`<div class="ev" style="flex-wrap:wrap"><span class="d">${mmdd(h.startDate).replace(/^(\d\d)(\d\d)$/,(_,a,b)=>`${+a}/${+b}`)}<small>週${WD[parseYmd(h.startDate).getDay()]}</small></span><span class="n">${esc(h.event)}<small class="num" style="font-size:15px">${h.startTime} – ${h.endTime}${h.endDate!==h.startDate?"（隔天）":""} · ${fmtH(shiftHours(h))}</small></span><button type="button" class="x" data-reopen="${h.id}">${entryReady()?"再開表單":"複製"}</button><button type="button" class="x" data-delhist="${h.id}">刪除</button>
+      ${S.copy===h.id?`<div style="flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;padding-top:8px">${[["Email",profile.email],["活動",h.event],["姓名",profile.name],["上班日期",mmdd(h.startDate)],["上班時間",h.startTime],["休息開始",h.breakStart],["休息結束",h.breakEnd],["下班日期",mmdd(h.endDate)],["下班時間",h.endTime],["交通",h.transport]].filter(x=>x[1]).map(([l,v])=>`<button type="button" class="pill" data-copy="${esc(v)}">${l}：${esc(v)}</button>`).join("")}</div>`:""}</div>`).join("")}</div>`:`<div class="empty">這個月還沒有打卡紀錄。</div>`}
+    <p class="qhint" style="margin:0">紀錄只存在這支手機上。「再開表單」會重新打開填好的表單，不會重複送出，除非你再按一次提交。</p></div>`;
+}
+document.addEventListener("click",e=>{const m=e.target.closest("[data-month]");if(m){S.month=m.dataset.month;render()}});
+
+/* ===== 設定 ===== */
+function viewSettings(){
+  const ready=entryReady();
+  return`<div class="screen fade"><h1 class="lt1">設定</h1>
+    <div class="card"><button type="button" class="crow" data-setp="name"><span class="k">姓名</span><span class="v">${esc(profile.name)}</span>${IC.chev}</button><button type="button" class="crow" data-setp="email"><span class="k">Email</span><span class="v">${esc(profile.email)}</span>${IC.chev}</button></div>
+    <div class="sech">預設交通方式</div>
+    <div class="card">${TRANSPORT.map(t=>`<button type="button" class="crow" data-settrans="${esc(t)}"><span class="v">${TRANSPORT_LABEL[t][0]}</span>${profile.transport===t?'<span style="color:var(--in);font-weight:700">✓</span>':""}</button>`).join("")}</div>
+    <div class="sech">表單</div>
+    <div class="card"><div class="crow"><span class="v">${ready?"表單已設定，送出時會自動填好":"表單還沒設定"}</span><span style="color:${ready?"var(--ok)":"var(--bad)"};font-weight:700">${ready?"✓":"!"}</span></div><button type="button" class="crow" data-resetcode><span class="v">重新輸入設定碼</span>${IC.chev}</button></div>
+    <button type="button" class="cta ghost" data-export>下載備份（行事曆和紀錄）</button>
+    <p class="qhint" style="margin:0">資料只存在這支手機的瀏覽器裡。換手機或清除瀏覽資料前，記得先下載備份。</p></div>`;
+}
+
+document.addEventListener("click",e=>{
+  if(e.target.closest("[data-savecode]")){const v=$("code").value;if(!useCode(v)){toast("設定碼不正確，請重新貼上");return}try{localStorage.setItem("punch.code",v.replace(/\s/g,""))}catch(_){}toast("設定完成");render();return}
+  if(e.target.closest("[data-resetcode]")){if(!confirm("要重新輸入設定碼嗎？行事曆和紀錄不會動。"))return;try{localStorage.removeItem("punch.code")}catch(_){}FORM_ID="";ENTRY={};render()}
+});
+
+/* ===== clock tick ===== */
+setInterval(()=>{if(S.wiz||S.tab!=="home")return;const n=new Date(),c=$("clk"),p=$("pt");if(c)c.textContent=`${pad(n.getHours())}:${pad(n.getMinutes())}`;if(p)p.textContent=floor5(n).time},5000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!S.wiz)render()});
+
+if("serviceWorker"in navigator&&location.protocol!=="file:")navigator.serviceWorker.register("sw.js").catch(()=>{});
+render();
+</script>
+</body>
+</html>
