@@ -14,6 +14,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&display=swap">
+<script>try{if(localStorage.getItem("punch.look")==="v2")document.documentElement.classList.add("v2")}catch(_){}</script>
 <style>
 /* Layout: one-screen app. Home = giant punch button (orange = 上班, blue = 下班); wizards show one question per screen and auto-advance. Look matches 器材調度板: road-case greys + gaffer-tape label. */
 :root{
@@ -159,6 +160,26 @@ nav.tabs button[aria-current="page"]{color:var(--in);font-weight:700}
 textarea.field{font-size:15px;line-height:1.5;padding:12px 14px;resize:vertical}
 .promptbox{white-space:pre-wrap;font-size:13px;background:var(--surface2);border-radius:12px;padding:12px;-webkit-user-select:text;user-select:text}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(100px + env(safe-area-inset-bottom,0px));z-index:9;background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-size:15px;max-width:calc(100% - 40px);text-align:center}
+
+/* ===== 新版外觀（試用）：設定頁打開才套用 ===== */
+html.v2{--bg:#F2F3F5;--surface:#FFFFFF;--surface2:#F5F6F8;--line:#E6E8EC;--muted:#6B737C;--in-soft:#FBF1E6}
+@media (prefers-color-scheme: dark){html.v2{--bg:#0B0C0E;--surface:#17191C;--surface2:#202327;--line:#25282C;--muted:#8D95A0;--ink:#F3F4F6;--in-soft:#221D18}}
+html.v2 .punch{width:min(66vw,258px);gap:10px;box-shadow:0 12px 32px rgba(0,0,0,.2),inset 0 -5px 0 rgba(0,0,0,.12)}
+html.v2 .punch b{font-size:58px;font-weight:600}
+html.v2 .punch small{font-size:13px;opacity:.8}
+html.v2 .hero{gap:22px}
+html.v2 .status .big{font-size:20px}
+html.v2 .status .sub{font-size:15px}
+html.v2 .card,html.v2 .field,html.v2 .chip,html.v2 .cta,html.v2 .total,html.v2 .addbox,html.v2 .empty{border-radius:18px}
+html.v2 .card{border-color:var(--line)}
+html.v2 .crow{min-height:48px;padding:11px 16px}
+html.v2 .cta{padding:15px}
+html.v2 .warn{background:var(--in-soft);color:var(--ink);display:flex;gap:10px;align-items:flex-start;border-radius:14px}
+html.v2 .warn::before{content:"!";flex:none;width:20px;height:20px;border-radius:50%;background:var(--in);color:var(--on);font-weight:700;font-size:13px;line-height:20px;text-align:center;margin-top:1px}
+html.v2 .dots{gap:14px}
+html.v2 .boba{font-size:22px;opacity:.22;transition:transform .2s,opacity .2s}
+html.v2 .boba.on{opacity:.55;filter:none}
+html.v2 .boba.cur{opacity:1;transform:scale(1.25)}
 </style>
 </head>
 <body>
@@ -368,7 +389,7 @@ function submitForm(){
 function viewWizard(){
   const w=S.wiz,k=stepKey(),d=w.data,steps=w.steps;
   /* 進度：每一步一杯珍奶，走到的那杯亮起來 */
-  const dots=!w.editOnly&&steps.length>1?`<div class="dots" aria-label="第 ${w.i+1} 步，共 ${steps.length} 步">${steps.map((_,i)=>`<span class="boba${i<=w.i?" on":""}">🧋</span>`).join("")}</div>`:'<div class="dots"></div>';
+  const dots=!w.editOnly&&steps.length>1?`<div class="dots" aria-label="第 ${w.i+1} 步，共 ${steps.length} 步">${steps.map((_,i)=>`<span class="boba${i<=w.i?" on":""}${i===w.i?" cur":""}">🧋</span>`).join("")}</div>`:'<div class="dots"></div>';
   const canBack=!(w.flow==="setup"&&w.i===0);
   let h=`<div class="screen full fade ${S.dir} wflow-${w.flow==="out"?"out":"in"}"><div class="wtop">${canBack?`<button type="button" class="back" data-wback>${IC.back}${w.i===0||w.editOnly?"取消":"上一步"}</button>`:"<span></span>"}${dots}<span class="skip"></span></div>`;
   h+=STEP[k](d,w);
@@ -541,6 +562,7 @@ document.addEventListener("click",e=>{
   const cp=t.closest("[data-copy]");if(cp){const v=cp.dataset.copy;(navigator.clipboard?navigator.clipboard.writeText(v):Promise.reject()).then(()=>toast("已複製："+v)).catch(()=>toast(v));return}
   const sp=t.closest("[data-setp]");if(sp){S.wiz=newWiz("setup",{...profile});S.wiz.i=sp.dataset.setp==="name"?1:0;render();return}
   const st=t.closest("[data-settrans]");if(st){profile.transport=st.dataset.settrans;save();toast("已設定預設交通方式");render();return}
+  if(t.closest("[data-look]")){const on=document.documentElement.classList.toggle("v2");try{localStorage.setItem("punch.look",on?"v2":"")}catch(_){}toast(on?"已換成新版外觀":"已換回原本外觀");render();return}
   if(t.closest("[data-export]")){const blob=new Blob([JSON.stringify({profile,cal,history},null,1)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="打卡備份.json";a.click();return}
 });
 
@@ -659,6 +681,8 @@ function viewSettings(){
     <div class="sech">表單</div>
     <div class="card"><div class="crow"><span class="v">${ready?"表單已設定，送出時會自動填好":"表單還沒設定"}</span><span style="color:${ready?"var(--ok)":"var(--bad)"};font-weight:700">${ready?"✓":"!"}</span></div>${ready?`<button type="button" class="crow" data-sharecode><span class="v">分享設定連結給同事</span>${IC.chev}</button>`:""}<button type="button" class="crow" data-resetcode><span class="v">重新輸入設定碼</span>${IC.chev}</button></div>
     ${ready?'<p class="qhint" style="margin:-6px 0 14px">同事點連結就設定好，不用貼設定碼。連結裡有表單代碼，請私訊傳，不要貼到公開的地方。</p>':""}
+    <div class="sech">外觀</div>
+    <div class="card"><button type="button" class="crow" data-look><span class="v">新版外觀（試用）</span><span style="color:var(--in);font-weight:700">${document.documentElement.classList.contains("v2")?"開":"關"}</span></button></div>
     <button type="button" class="cta ghost" data-export>下載備份（行事曆和紀錄）</button>
     <p class="qhint" style="margin:0">資料只存在這支手機的瀏覽器裡。換手機或清除瀏覽資料前，記得先下載備份。</p></div>`;
 }
