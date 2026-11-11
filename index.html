@@ -105,6 +105,9 @@ button.crow:active{background:var(--surface2)}
 .quick{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
 .pill{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:8px 14px;font-size:15px;font-weight:500}
 .pill:active{background:var(--surface2)}
+.pill.on{border-color:var(--in);background:var(--in-soft);color:var(--in);font-weight:700}
+.inline3{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:8px}
+.inline3 .cta{padding:12px 6px;font-size:15px}
 .spacer{flex:1}
 .cta{width:100%;border:0;border-radius:16px;padding:17px;font-size:18px;font-weight:700;color:var(--on);background:var(--in)}
 .wflow-out .cta,.cta.blue{background:var(--out)}
@@ -206,9 +209,11 @@ const IC={
 };
 
 /* ===== 行事曆 → 今天的活動選項 ===== */
-/* 這天已經打卡送出過的活動就不再列出（跨好幾天的活動，隔天會再出現） */
-const punched=(name,d)=>history.some(h=>h.event===name&&h.startDate===d);
+/* 這天已經確認送出的活動就不再列出（跨好幾天的活動，隔天會再出現）。還沒確認送出的不算。 */
+const punched=(name,d)=>history.some(h=>h.event===name&&h.startDate===d&&h.status!=="pending");
 function eventsOn(d){return cal.filter(e=>e.date<=d&&d<=(e.end||e.date)&&!punched(e.name,d)).sort((a,b)=>(a.time||"").localeCompare(b.time||"")||a.name.localeCompare(b.name,"zh-Hant"))}
+/* 凌晨 6 點前，昨天的場次也一起列（跨夜場） */
+function dayEvents(ref){const t=today();ref=ref||t;const list=eventsOn(ref).map(e=>({...e,tag:""}));if(ref===t&&new Date().getHours()<6){const y=ymd(new Date(Date.now()-864e5));for(const e of eventsOn(y))if(!list.some(x=>x.name===e.name))list.push({...e,tag:"昨天"})}return list}
 function recentNames(exclude){const seen=new Set(exclude);const out=[];for(const h of[...history].reverse()){if(h.event&&!seen.has(h.event)){seen.add(h.event);out.push(h.event)}if(out.length>=4)break}return out}
 
 /* ===== 表單網址 ===== */
@@ -243,14 +248,16 @@ $("tabs").addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if
 function viewHome(){
   const now=new Date(),t=today();
   let h=`<div class="screen fade"><div class="top"><div><h1>${esc(profile.name)}，${now.getHours()<12?"早安":now.getHours()<18?"午安":"辛苦了"}</h1><div class="date">${now.getMonth()+1}/${now.getDate()} 週${WD[now.getDay()]}</div></div><div class="clock num" id="clk">${pad(now.getHours())}:${pad(now.getMinutes())}</div></div>`;
+  h+=pendCard();
   if(!shift){
-    const evs=eventsOn(t);const f=floor5(now);
+    const evs=dayEvents(t);const f=floor5(now);
     h+=`<div class="hero"><button type="button" class="punch in" data-go="in"><small>上班打卡</small><b class="num" id="pt">${f.time}</b><small>按下記錄這個時間</small></button>
-      <div class="status"><span class="sub">${evs.length?`今天行事曆：${evs.map(e=>esc(e.name)).join("、")}`:"今天行事曆沒有活動，打卡時可以手動輸入"}</span></div></div>
+      <div class="status"><span class="sub">${evs.length?`今天行事曆：${evs.map(e=>esc(e.name)+(e.tag?"（昨天）":"")).join("、")}`:"今天行事曆沒有活動，打卡時可以手動輸入"}</span></div></div>
       <button type="button" class="linkbtn" data-go="manual">忘了打卡？手動補登一筆</button>`;
   }else{
-    const hrs=shiftHours({...shift,...floor5Out()});
+    const hrs=shiftHours({...shift,...floor5Out()}),long=hrs!=null&&hrs>=14;
     h+=`<span class="tape">${esc(shift.event||"還沒選活動")}</span>
+      ${long?`<div class="warn" style="display:flex;align-items:center;gap:10px"><span style="flex:1">上班已經 ${Math.floor(hrs)} 小時了，是不是忘了打下班卡？</span><button type="button" class="pill" data-go="outfix" style="flex:none">補下班時間</button></div>`:""}
       <div class="hero"><button type="button" class="punch out" data-go="out"><small>下班打卡</small><b class="num" id="pt">${floor5(now).time}</b><small>按下記錄這個時間</small></button>
       <div class="status"><span class="big">上班中 · ${nice(shift.startDate)} ${shift.startTime} 起</span><span class="sub num">${hrs!=null&&hrs>=0?"已經 "+fmtH(hrs):""}</span></div></div>
       <div class="card">
@@ -264,23 +271,26 @@ function viewHome(){
 }
 function floor5Out(){const f=floor5(new Date());return{endDate:f.date,endTime:f.time}}
 function tLabel(t){return TRANSPORT_LABEL[t]?TRANSPORT_LABEL[t][0]:(t||"")}
+/* 表單打開了不代表送出了：回到 App 時問一下 */
+function pendCard(){
+  const p=history.filter(h=>h.status==="pending");if(!p.length)return"";const r=p[p.length-1];
+  return`<div class="card" style="border-color:var(--in)"><div style="padding:14px 16px;display:flex;flex-direction:column;gap:10px">
+    <span style="font-weight:700">「${esc(r.event)}」${md(r.startDate)} 的表單送出了嗎？${p.length>1?`<small style="display:block;color:var(--muted);font-weight:400">另外還有 ${p.length-1} 筆沒確認</small>`:""}</span>
+    <div class="inline3"><button type="button" class="cta" data-pend="ok" data-id="${r.id}">送出了</button><button type="button" class="cta ghost" data-pend="again" data-id="${r.id}">再開一次</button><button type="button" class="cta ghost" data-pend="drop" data-id="${r.id}">不送了</button></div></div></div>`;
+}
 
-/* ===== 精靈（一題一頁，選完自動下一題） ===== */
-const FLOWS={
-  setup:["email","name"],
-  in:["event","transport"],
-  out:["break","review"],
-  manual:["event","startDate","startTime","break","endDate","endTime","transport","review"],
-};
-function newWiz(flow,data={}){return{flow,i:0,data,editOnly:null,err:""}}
-function startIn(){const f=floor5(new Date());S.wiz=newWiz("in",{startDate:f.date,startTime:f.time,event:"",transport:profile.transport||""});buzz();S.dir="";render()}
+/* ===== 精靈 ===== */
+const FLOWS={setup:["email","name"],in:["event"],out:["review"],manual:["manual"]};
+function newWiz(flow,data={},steps){return{flow,steps:steps||FLOWS[flow],i:0,data,editOnly:null,err:""}}
+function startIn(){const f=floor5(new Date());S.wiz=newWiz("in",{startDate:f.date,startTime:f.time,event:"",transport:profile.transport||""},profile.transport?["event"]:["event","transport"]);buzz();S.dir="";render()}
 function startOut(){const f=floor5(new Date());S.wiz=newWiz("out",{...shift,endDate:f.date,endTime:f.time,breakStart:shift.breakStart||"",breakEnd:shift.breakEnd||""});buzz();S.dir="";render()}
-function startManual(){const t=today();S.wiz=newWiz("manual",{event:"",startDate:t,startTime:"",breakStart:"",breakEnd:"",endDate:t,endTime:"",transport:profile.transport||""});S.dir="";render()}
-function stepKey(){const w=S.wiz;return w.editOnly||FLOWS[w.flow][w.i]}
+function startOutFix(){S.wiz=newWiz("out",{...shift,endDate:shift.startDate,endTime:"",breakStart:shift.breakStart||"",breakEnd:shift.breakEnd||""});S.wiz.editOnly="endTime";S.dir="";render()}
+function startManual(){const t=today();S.wiz=newWiz("manual",{event:"",startDate:t,startTime:"",breakStart:"",breakEnd:"",endDate:t,endTime:"",transport:profile.transport||"",raw:{ev:"",sd:mmdd(t),st:"",et:"",b1:"",b2:""}});S.dir="";render()}
+function stepKey(){const w=S.wiz;return w.editOnly||w.steps[w.i]}
 function next(){
   const w=S.wiz;S.dir="";w.err="";
   if(w.editOnly){w.editOnly=null;if(w.returnTo==="home"){finishEdit();return}render();return}
-  if(w.i<FLOWS[w.flow].length-1){w.i++;render();return}
+  if(w.i<w.steps.length-1){w.i++;render();return}
   finish();
 }
 function back(){const w=S.wiz;S.dir="back";w.err="";if(w.editOnly){w.editOnly=null;if(w.returnTo==="home"){S.wiz=null}render();return}if(w.i>0){w.i--;render();return}if(w.flow==="setup"&&!(profile.email&&profile.name))return;S.wiz=null;render()}
@@ -295,10 +305,11 @@ function editShift(field){
   S.wiz=newWiz("in",{...shift});S.wiz.editOnly=map[field];S.wiz.returnTo="home";render();
 }
 function submitForm(){
-  const d=S.wiz.data;
-  const rec={id:rid(),event:d.event,startDate:d.startDate,startTime:d.startTime,breakStart:d.breakStart||"",breakEnd:d.breakEnd||"",endDate:d.endDate,endTime:d.endTime,transport:d.transport,openedAt:new Date().toISOString()};
+  const w=S.wiz,d=w.data;
+  const rec={id:rid(),event:d.event,startDate:d.startDate,startTime:d.startTime,breakStart:d.breakStart||"",breakEnd:d.breakEnd||"",endDate:d.endDate,endTime:d.endTime,transport:d.transport,openedAt:new Date().toISOString(),status:"pending"};
+  if(w.flow==="out"&&shift)rec.prevShift=shift;
   history.push(rec);if(d.transport)profile.transport=d.transport;
-  if(S.wiz.flow==="out")shift=null;
+  if(w.flow==="out")shift=null;
   save();
   const url=formUrl(rec);
   S.wiz=null;S.tab="home";render();
@@ -307,10 +318,10 @@ function submitForm(){
 }
 
 function viewWizard(){
-  const w=S.wiz,k=stepKey(),d=w.data,steps=FLOWS[w.flow];
-  const dots=w.editOnly?"":`<div class="dots">${steps.map((_,i)=>`<i class="${i<=w.i?"on":""}"></i>`).join("")}</div>`;
+  const w=S.wiz,k=stepKey(),d=w.data,steps=w.steps;
+  const dots=!w.editOnly&&steps.length>1?`<div class="dots">${steps.map((_,i)=>`<i class="${i<=w.i?"on":""}"></i>`).join("")}</div>`:'<div class="dots"></div>';
   const canBack=!(w.flow==="setup"&&w.i===0);
-  let h=`<div class="screen full fade ${S.dir} wflow-${w.flow==="out"?"out":"in"}"><div class="wtop">${canBack?`<button type="button" class="back" data-wback>${IC.back}${w.i===0||w.editOnly?"取消":"上一步"}</button>`:"<span></span>"}${dots||'<div class="dots"></div>'}<span class="skip"></span></div>`;
+  let h=`<div class="screen full fade ${S.dir} wflow-${w.flow==="out"?"out":"in"}"><div class="wtop">${canBack?`<button type="button" class="back" data-wback>${IC.back}${w.i===0||w.editOnly?"取消":"上一步"}</button>`:"<span></span>"}${dots}<span class="skip"></span></div>`;
   h+=STEP[k](d,w);
   return h+`</div>`;
 }
@@ -321,94 +332,137 @@ const STEP={
   name:d=>`<h2 class="q">你的名字</h2><p class="qhint">填表單上的姓名，之後會自動帶入。</p>
     <input class="field" id="f" autocomplete="name" enterkeyhint="done" placeholder="你的姓名" value="${esc(d.name||profile.name)}">
     <p class="err" id="err"></p><div class="spacer"></div><button type="button" class="cta" data-ok="name">完成</button>`,
-  event:d=>{
-    const ref=d.startDate||today(),evs=eventsOn(ref),rec=recentNames(evs.map(e=>e.name));
-    const opts=[...evs.map(e=>({n:e.name,s:(e.end&&e.end!==e.date?`行事曆 ${nice(e.date)}–${nice(e.end)}`:"今天的行事曆")+(e.time?` · ${e.time}`:"")})),...rec.map(n=>({n,s:"最近打卡過"}))];
+  /* 選活動：輸入格在最上面；行事曆場次和最近打過的活動在下面，點一下就完成 */
+  event:(d,w)=>{
+    const ref=d.startDate||today(),evs=dayEvents(ref),rec=recentNames(evs.map(e=>e.name));
+    const opts=[...evs.map(e=>({n:e.name,s:(e.tag?"昨天的行事曆":e.end&&e.end!==e.date?`行事曆 ${nice(e.date)}–${nice(e.end)}`:"今天的行事曆")+(e.time?` · ${e.time}`:"")})),...rec.map(n=>({n,s:"最近打卡過"}))];
+    const isIn=w.flow==="in"&&!w.editOnly,last=isIn&&w.i===w.steps.length-1;
     return`<h2 class="q">今天是哪個活動？</h2>
-      <div class="chips">${opts.map((o,i)=>`<button type="button" class="chip${d.event===o.n?" on":""}" data-pick="event" data-v="${esc(o.n)}"><span class="lt">${String.fromCharCode(65+i)}</span><span>${esc(o.n)}<small>${o.s}</small></span></button>`).join("")||`<div class="empty">${ref===today()?"今天":"這天"}的行事曆沒有活動，直接在下面輸入。<br>之後可以在「行事曆」先排好，打卡時點一下就好。</div>`}</div>
-      <div class="or">${opts.length?"或手動輸入":"手動輸入"}</div>
-      <div class="inline"><input class="field" id="f" enterkeyhint="next" placeholder="活動名稱" value="${esc(opts.some(o=>o.n===d.event)?"":d.event||"")}"><button type="button" data-ok="event">下一步</button></div>
-      <p class="err" id="err"></p>`;
+      <div class="inline"><input class="field" id="f" enterkeyhint="go" autocomplete="off" placeholder="輸入活動名稱" value="${esc(opts.some(o=>o.n===d.event)?"":d.event||"")}"${evs.length?"":" data-autof"}><button type="button" data-ok="event">${!isIn?"確定":last?"上班":"下一步"}</button></div>
+      <p class="err" id="err"></p>
+      ${opts.length?`<div class="chips">${opts.map((o,i)=>`<button type="button" class="chip${d.event===o.n?" on":""}" data-pick="event" data-v="${esc(o.n)}"><span class="lt">${String.fromCharCode(65+i)}</span><span>${esc(o.n)}<small>${o.s}</small></span></button>`).join("")}</div>`:""}
+      ${isIn&&d.transport&&last?`<div class="spacer"></div><div class="card"><button type="button" class="crow" data-jump="transport"><span class="k">交通</span><span class="v">${esc(tLabel(d.transport))}</span><span style="color:var(--muted);font-size:14px">改</span>${IC.chev}</button></div>`:""}`;
   },
   transport:d=>`<h2 class="q">怎麼過去的？</h2>
     <div class="chips">${TRANSPORT.map((t,i)=>`<button type="button" class="chip${d.transport===t?" on":""}" data-pick="transport" data-v="${esc(t)}"><span class="lt">${String.fromCharCode(65+i)}</span><span>${TRANSPORT_LABEL[t][0]}<small>${TRANSPORT_LABEL[t][1]}</small></span></button>`).join("")}</div>
     <div class="or">其他方式</div>
-    <div class="inline"><input class="field" id="f" enterkeyhint="next" placeholder="例如：同事載" value="${esc(TRANSPORT.includes(d.transport)?"":d.transport||"")}"><button type="button" data-ok="transport">下一步</button></div>
+    <div class="inline"><input class="field" id="f" enterkeyhint="next" placeholder="例如：同事載" value="${esc(TRANSPORT.includes(d.transport)?"":d.transport||"")}"><button type="button" data-ok="transport">確定</button></div>
     <p class="err" id="err"></p>`,
-  startDate:d=>dateStep("上班日期",d.startDate,"startDate"),
-  endDate:d=>dateStep("下班日期",d.endDate,"endDate",d.startDate),
   startTime:d=>timeStep("幾點上班？",d.startTime,"startTime"),
   endTime:d=>timeStep("幾點下班？",d.endTime,"endTime"),
-  break:d=>`<h2 class="q">中間有休息嗎？</h2><p class="qhint">沒有就直接跳過，有的話輸入開始和結束時間（例如 1230）。</p>
+  break:d=>`<h2 class="q">中間有休息嗎？</h2><p class="qhint">輸入開始和結束時間（例如 1230）。</p>
     <button type="button" class="chip${!d.breakStart&&!d.breakEnd?" on":""}" data-nobreak><span class="lt">A</span><span>沒有休息</span></button>
     <div class="or">有休息</div>
     <div class="breakrow"><input class="field" id="b1" inputmode="numeric" placeholder="開始" value="${esc(d.breakStart||"")}" aria-label="休息開始"><span>到</span><input class="field" id="b2" inputmode="numeric" placeholder="結束" value="${esc(d.breakEnd||"")}" aria-label="休息結束"></div>
-    <p class="err" id="err"></p><div class="spacer"></div><button type="button" class="cta" data-ok="break">下一步</button>`,
-  review:(d,w)=>{
-    const hrs=shiftHours(d);
-    const row=(k,label,val,step)=>`<button type="button" class="crow" data-jump="${step}"><span class="k">${label}</span><span class="v${val?"":" none"}">${val||"（沒有）"}</span>${IC.chev}</button>`;
+    <p class="err" id="err"></p><div class="spacer"></div><button type="button" class="cta" data-ok="break">確定</button>`,
+  /* 下班：直接到確認頁，休息是其中一行 */
+  review:d=>{
+    const hrs=shiftHours(d),noEnd=!d.endTime;
+    const row=(label,val,step)=>`<button type="button" class="crow" data-jump="${step}"><span class="k">${label}</span><span class="v${val?"":" none"}">${val||"（沒有）"}</span>${IC.chev}</button>`;
     return`<h2 class="q">確認一下</h2><p class="qhint">點任何一行可以修改。${hrs!=null?`這次共 <b class="num" style="font-size:18px">${fmtH(hrs)}</b>`:""}</p>
       <div class="card review">
-        ${row("event","活動",esc(d.event),"event")}
-        ${row("s","上班",`<span class="num" style="font-size:19px">${md(d.startDate)}　${d.startTime}</span>`,"startTime")}
-        ${row("b","休息",d.breakStart&&d.breakEnd?`<span class="num" style="font-size:19px">${d.breakStart} – ${d.breakEnd}</span>`:"","break")}
-        ${row("e","下班",`<span class="num" style="font-size:19px">${md(d.endDate)}　${d.endTime}</span>`,"endTime")}
-        ${row("t","交通",esc(tLabel(d.transport)),"transport")}
+        ${row("活動",esc(d.event),"event")}
+        ${row("上班",`<span class="num" style="font-size:19px">${md(d.startDate)}　${d.startTime}</span>`,"startTime")}
+        ${row("休息",d.breakStart&&d.breakEnd?`<span class="num" style="font-size:19px">${d.breakStart} – ${d.breakEnd}</span>`:"","break")}
+        ${row("下班",noEnd?"":`<span class="num" style="font-size:19px">${md(d.endDate)}　${d.endTime}</span>`,"endTime")}
+        ${row("交通",esc(tLabel(d.transport)),"transport")}
       </div>
-      <div class="card"><div class="crow"><span class="k">姓名</span><span class="v">${esc(profile.name)}</span></div><div class="crow"><span class="k">Email</span><span class="v">${esc(profile.email)}</span></div></div>
-      ${hrs!=null&&hrs<0?`<p class="err">下班時間比上班早，請檢查日期（跨夜要選隔天）。</p>`:""}
+      ${noEnd?`<p class="err">還沒填下班時間。</p>`:""}
+      ${hrs!=null&&hrs<0?`<p class="err">下班時間比上班早，請檢查時間。</p>`:""}
       ${!entryReady()?`<div class="warn">表單欄位還沒設定完成，送出後會存到「紀錄」，可以逐項複製貼到表單。</div>`:""}
-      <div class="spacer"></div><button type="button" class="cta" data-submit ${hrs!=null&&hrs<0?"disabled":""}>打開表單，按提交就完成</button>`;
+      <div class="spacer"></div><button type="button" class="cta" data-submit ${noEnd||(hrs!=null&&hrs<0)?"disabled":""}>打開表單，按提交就完成</button>`;
+  },
+  /* 補登：一頁填完 */
+  manual:d=>{
+    const r=d.raw,p=manualParse(d);
+    const evs=p.sd?dayEvents(p.sd).filter(e=>!e.tag):[],names=[...evs.map(e=>e.name),...recentNames(evs.map(e=>e.name))].slice(0,8);
+    const days=[0,1,2].map(n=>ymd(new Date(Date.now()-n*864e5)));
+    return`<h2 class="q">補登一筆</h2><p class="qhint">時間輸入 4 碼，例如 0830。下班比上班早就算隔天。</p>
+      <div class="addbox">
+        <div class="row"><label for="msd">日期</label><input id="msd" inputmode="numeric" maxlength="4" placeholder="月日 4 碼" value="${esc(r.sd)}" autocomplete="off"></div>
+        <div class="quick" style="justify-content:flex-start">${days.map((v,i)=>`<button type="button" class="pill${p.sd===v?" on":""}" data-msd="${v}">${["今天","昨天","前天"][i]} ${md(v)}</button>`).join("")}</div>
+        <div class="row"><label for="mev">活動</label><input id="mev" placeholder="活動名稱" value="${esc(r.ev)}" autocomplete="off"></div>
+        ${names.length?`<div class="quick" style="justify-content:flex-start">${names.map(n=>`<button type="button" class="pill${r.ev===n?" on":""}" data-mev="${esc(n)}">${esc(n)}</button>`).join("")}</div>`:""}
+        <div class="row"><label for="mst">上班</label><input id="mst" class="num" inputmode="numeric" maxlength="5" placeholder="0830" value="${esc(r.st)}"><label for="met" style="text-align:center">下班</label><input id="met" class="num" inputmode="numeric" maxlength="5" placeholder="1800" value="${esc(r.et)}"></div>
+        <div class="row"><label for="mb1">休息</label><input id="mb1" class="num" inputmode="numeric" maxlength="5" placeholder="沒有就空白" value="${esc(r.b1)}"><span style="color:var(--muted)">到</span><input id="mb2" class="num" inputmode="numeric" maxlength="5" placeholder="" value="${esc(r.b2)}"></div>
+      </div>
+      <div class="sech">交通</div>
+      <div class="quick" style="justify-content:flex-start">${TRANSPORT.map(t=>`<button type="button" class="pill${d.transport===t?" on":""}" data-mtr="${esc(t)}">${TRANSPORT_LABEL[t][0]}</button>`).join("")}</div>
+      <div class="total"><span id="msum">${manualSum(d)}</span></div>
+      <p class="err" id="err"></p>
+      <div class="spacer"></div><button type="button" class="cta" data-msubmit>打開表單，按提交就完成</button>`;
   },
 };
-function dateStep(q,val,key,ref){
-  const t=today(),y=ymd(new Date(Date.now()-864e5)),tm=ymd(new Date(Date.now()+864e5));
-  return`<h2 class="q">${q}</h2><p class="qhint">輸入月日 4 碼（例如 1122），或點下面的日期。</p>
-    <input class="field bigtime" id="f" inputmode="numeric" maxlength="5" placeholder="MMDD" value="${val?mmdd(val):""}" data-date="${key}">
-    <div class="quick">${[[y,"昨天"],[t,"今天"],...(ref?[[ref,"同上班日"],[ymd(new Date(parseYmd(ref).getTime()+864e5)),"上班隔天"]]:[[tm,"明天"]])].filter((x,i,a)=>a.findIndex(z=>z[0]===x[0])===i).map(([v,l])=>`<button type="button" class="pill" data-setdate="${key}" data-v="${v}">${l} ${nice(v)}</button>`).join("")}</div>
-    <p class="err" id="err"></p><div class="spacer"></div><button type="button" class="cta" data-ok="${key}">下一步</button>`;
+function manualParse(d){const r=d.raw,sd=mmddToYmd(r.sd,today()),st=normTime(r.st),et=normTime(r.et);let ed=null;if(sd&&st&&et)ed=et>=st?sd:ymd(new Date(parseYmd(sd).getTime()+864e5));return{sd,st,et,ed,b1:normTime(r.b1),b2:normTime(r.b2)}}
+function manualSum(d){const p=manualParse(d);if(!p.sd||!p.st||!p.et)return"填好日期和上下班時間，這裡會算時數";const h=shiftHours({startDate:p.sd,startTime:p.st,endDate:p.ed,endTime:p.et,breakStart:p.b1&&p.b2?p.b1:"",breakEnd:p.b1&&p.b2?p.b2:""});return`${nice(p.sd)} ${p.st} – ${p.ed!==p.sd?"隔天 ":""}${p.et} · 共 ${fmtH(h)}`}
+function manualSubmit(){
+  const d=S.wiz.data,r=d.raw,p=manualParse(d),ev=r.ev.trim();
+  if(!p.sd)return setErr("日期格式是月日 4 碼，例如 1122。");
+  if(!ev)return setErr("請輸入活動名稱。");
+  if(!p.st||!p.et)return setErr("請填上班和下班時間，例如 0830 和 1800。");
+  if((r.b1.trim()||r.b2.trim())&&!(p.b1&&p.b2))return setErr("休息要填開始和結束，沒有就兩格都空白。");
+  if(!d.transport)return setErr("請選交通方式。");
+  Object.assign(d,{event:ev,startDate:p.sd,startTime:p.st,endDate:p.ed,endTime:p.et,breakStart:p.b1&&p.b2?p.b1:"",breakEnd:p.b1&&p.b2?p.b2:""});
+  submitForm();
 }
 function timeStep(q,val,key){
   const n=floor5(new Date()).time;
-  return`<h2 class="q">${q}</h2><p class="qhint">24 小時制，輸入 4 碼（例如 0830、2300）會自動跳下一題。</p>
+  return`<h2 class="q">${q}</h2><p class="qhint">24 小時制，輸入 4 碼（例如 0830、2300）會自動跳回去。</p>
     <input class="field bigtime" id="f" inputmode="numeric" maxlength="5" placeholder="00:00" value="${val||""}" data-time="${key}">
     <div class="quick"><button type="button" class="pill" data-adj="-5" data-k="${key}">−5 分</button><button type="button" class="pill" data-setnow="${key}">現在 ${n}</button><button type="button" class="pill" data-adj="5" data-k="${key}">+5 分</button></div>
-    <p class="err" id="err"></p><div class="spacer"></div><button type="button" class="cta" data-ok="${key}">下一步</button>`;
+    <p class="err" id="err"></p><div class="spacer"></div><button type="button" class="cta" data-ok="${key}">確定</button>`;
 }
 function setErr(m){const e=$("err");if(e)e.textContent=m||""}
+const nextDay=s=>ymd(new Date(parseYmd(s).getTime()+864e5));
 function commit(key){
   const d=S.wiz.data,f=$("f");
   if(key==="email"){const v=f.value.trim();if(!/^\S+@\S+\.\S+$/.test(v))return setErr("請輸入正確的 Email。");d.email=v;return next()}
   if(key==="name"){const v=f.value.trim();if(!v)return setErr("請輸入名字。");d.name=v;return next()}
   if(key==="event"){const v=f.value.trim()||d.event;if(!v)return setErr("請選一個活動或輸入名稱。");d.event=v;return next()}
   if(key==="transport"){const v=f.value.trim()||d.transport;if(!v)return setErr("請選交通方式。");d.transport=v;return next()}
-  if(key==="startDate"||key==="endDate"){const v=mmddToYmd(f.value,today());if(!v)return setErr("日期格式是月日 4 碼，例如 1122。");d[key]=v;return next()}
-  if(key==="startTime"||key==="endTime"){const v=normTime(f.value);if(!v)return setErr("時間格式是 4 碼，例如 0830。");d[key]=v;return next()}
+  if(key==="startTime"){const v=normTime(f.value);if(!v)return setErr("時間格式是 4 碼，例如 0830。");d.startTime=v;return next()}
+  /* 下班日期自動判斷：比上班時間早就是隔天 */
+  if(key==="endTime"){const v=normTime(f.value);if(!v)return setErr("時間格式是 4 碼，例如 0830。");d.endTime=v;if(d.startDate&&d.startTime)d.endDate=v>=d.startTime?d.startDate:nextDay(d.startDate);return next()}
   if(key==="break"){const a=$("b1").value.trim(),b=$("b2").value.trim();if(!a&&!b){d.breakStart="";d.breakEnd="";return next()}const x=normTime(a),y=normTime(b);if(!x||!y)return setErr("休息時間要填開始和結束，例如 1230 和 1330。");d.breakStart=x;d.breakEnd=y;return next()}
 }
+const colonize=v=>{const s=v.replace(/[^\d]/g,"").slice(0,4);return s.length>2?s.slice(0,2)+":"+s.slice(2):s};
 function afterRender(){
   const f=$("f");
   const numeric=f&&(f.dataset.time||f.dataset.date);
-  if(f&&S.wiz&&!/^(event|transport)$/.test(stepKey()))setTimeout(()=>{if(!f.isConnected)return;f.focus({preventScroll:true});try{numeric?f.select():f.setSelectionRange(f.value.length,f.value.length)}catch(_){}},180);
+  if(f&&S.wiz&&(!/^(event|transport)$/.test(stepKey())||f.hasAttribute("data-autof")))setTimeout(()=>{if(!f.isConnected)return;f.focus({preventScroll:true});try{numeric?f.select():f.setSelectionRange(f.value.length,f.value.length)}catch(_){}},180);
   if(numeric){f.onfocus=()=>setTimeout(()=>{try{f.select()}catch(_){}},0);f.onclick=()=>{try{f.select()}catch(_){}}}
   const auto=(key,ok)=>{clearTimeout(window.__adv);window.__adv=setTimeout(()=>{if($("f")===f&&stepKey()===key&&ok())commit(key)},260)};
-  if(f&&f.dataset.time)f.oninput=()=>{const s=f.value.replace(/[^\d]/g,"").slice(0,4);f.value=s.length>2?s.slice(0,2)+":"+s.slice(2):s;if(s.length===4){if(normTime(s))auto(f.dataset.time,()=>normTime(f.value));else setErr("沒有這個時間，請重新輸入。")}else setErr("")};
-  if(f&&f.dataset.date)f.oninput=()=>{const s=f.value.replace(/[^\d]/g,"").slice(0,4);f.value=s;if(s.length===4){if(mmddToYmd(s,today()))auto(f.dataset.date,()=>mmddToYmd(f.value,today()));else setErr("沒有這個日期，請重新輸入。")}else setErr("")};
-  for(const id of["b1","b2"]){const el=$(id);if(el)el.oninput=()=>{const s=el.value.replace(/[^\d]/g,"").slice(0,4);el.value=s.length>2?s.slice(0,2)+":"+s.slice(2):s;if(s.length===4&&id==="b1")$("b2").focus()}}
+  if(f&&f.dataset.time)f.oninput=()=>{const s=f.value.replace(/[^\d]/g,"").slice(0,4);f.value=colonize(s);if(s.length===4){if(normTime(s))auto(f.dataset.time,()=>normTime(f.value));else setErr("沒有這個時間，請重新輸入。")}else setErr("")};
+  for(const id of["b1","b2"]){const el=$(id);if(el)el.oninput=()=>{const s=el.value.replace(/[^\d]/g,"").slice(0,4);el.value=colonize(s);if(s.length===4&&id==="b1")$("b2").focus()}}
   if(f)f.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();const ok=document.querySelector("[data-ok]");ok&&ok.click()}};
+  /* 補登頁：打字時只更新時數，不重畫整頁 */
+  if(S.wiz&&stepKey()==="manual"){
+    const d=S.wiz.data,map={msd:"sd",mev:"ev",mst:"st",met:"et",mb1:"b1",mb2:"b2"},order=["mst","met","mb1","mb2"];
+    for(const[id,k]of Object.entries(map)){const el=$(id);if(!el)continue;el.oninput=()=>{if(id!=="mev"&&id!=="msd")el.value=colonize(el.value);if(id==="msd")el.value=el.value.replace(/[^\d]/g,"").slice(0,4);d.raw[k]=el.value;$("msum").textContent=manualSum(d);setErr("");const i=order.indexOf(id);if(i>=0&&i<order.length-1&&el.value.replace(/[^\d]/g,"").length===4)$(order[i+1]).focus()};if(id==="msd")el.onchange=()=>render()}
+  }
 }
 document.addEventListener("click",e=>{
   const t=e.target;
-  const go=t.closest("[data-go]");if(go){({in:startIn,out:startOut,manual:startManual})[go.dataset.go]();return}
+  const go=t.closest("[data-go]");if(go){({in:startIn,out:startOut,outfix:startOutFix,manual:startManual})[go.dataset.go]();return}
   if(t.closest("[data-wback]")){back();return}
   const ok=t.closest("[data-ok]");if(ok){commit(ok.dataset.ok);return}
   const pk=t.closest("[data-pick]");if(pk){S.wiz.data[pk.dataset.pick]=pk.dataset.v;buzz();document.querySelectorAll(`[data-pick="${pk.dataset.pick}"]`).forEach(x=>x.classList.toggle("on",x===pk));setTimeout(next,160);return}
   if(t.closest("[data-nobreak]")){S.wiz.data.breakStart="";S.wiz.data.breakEnd="";buzz();setTimeout(next,140);return}
-  const sd=t.closest("[data-setdate]");if(sd){S.wiz.data[sd.dataset.setdate]=sd.dataset.v;$("f").value=mmdd(sd.dataset.v);setTimeout(next,140);return}
   const sn=t.closest("[data-setnow]");if(sn){$("f").value=floor5(new Date()).time;setTimeout(()=>commit(sn.dataset.setnow),120);return}
   const adj=t.closest("[data-adj]");if(adj){const f=$("f"),cur=normTime(f.value)||floor5(new Date()).time;let[h,m]=cur.split(":").map(Number);let tot=(h*60+m+(+adj.dataset.adj)+1440)%1440;f.value=`${pad(Math.floor(tot/60))}:${pad(tot%60)}`;setErr("");return}
   const jp=t.closest("[data-jump]");if(jp){S.wiz.editOnly=jp.dataset.jump;S.dir="";render();return}
   if(t.closest("[data-submit]")){submitForm();return}
+  /* 補登頁 */
+  const msd=t.closest("[data-msd]");if(msd){S.wiz.data.raw.sd=mmdd(msd.dataset.msd);render();return}
+  const mev=t.closest("[data-mev]");if(mev){S.wiz.data.raw.ev=mev.dataset.mev;render();return}
+  const mtr=t.closest("[data-mtr]");if(mtr){S.wiz.data.transport=mtr.dataset.mtr;render();return}
+  if(t.closest("[data-msubmit]")){manualSubmit();return}
+  /* 送出了嗎？ */
+  const pd=t.closest("[data-pend]");if(pd){const r=history.find(x=>x.id===pd.dataset.id);if(!r)return;const a=pd.dataset.pend;
+    if(a==="ok"){delete r.status;delete r.prevShift;save();toast("好，這筆打卡完成");render();return}
+    if(a==="again"){window.open(formUrl(r),"_blank");return}
+    if(a==="drop"){if(!pd.dataset.armed){pd.dataset.armed=1;pd.textContent="確定？";setTimeout(()=>{if(pd.isConnected){delete pd.dataset.armed;pd.textContent="不送了"}},3000);return}
+      history=history.filter(x=>x!==r);if(r.prevShift&&!shift)shift=r.prevShift;save();toast(r.prevShift?"已刪掉，回到上班中":"已刪掉這筆");render();return}}
   const ed=t.closest("[data-edit]");if(ed){editShift(ed.dataset.edit);return}
   const cs=t.closest("[data-cancelshift]");if(cs){if(!cs.dataset.armed){cs.dataset.armed=1;cs.textContent="再按一次確定取消（紀錄會刪掉）";setTimeout(()=>{if(cs.isConnected){delete cs.dataset.armed;cs.textContent="取消這次上班打卡"}},3500);return}shift=null;save();toast("已取消上班打卡");render();return}
   /* 行事曆 / 紀錄 / 設定 */
@@ -450,11 +504,13 @@ function calPrompt(){const t=today();return`這是一張工作行事曆的截圖
 
 規則：
 - 今天是 ${t.slice(0,4)} 年 ${md(t)}。${md(t)} 以前就結束的活動不要列。
-- 活動名稱照截圖上的字，一字不改，不要加 emoji 或符號。名稱被截斷的，照看得到的部分寫，後面加「…」。
+- 活動名稱照截圖上的字，一字不改，不要加 emoji 或符號。括號和括號裡的字不用寫；名稱被截斷的，只寫看得到的部分。
 - 跨好幾天的長條寫起訖日期；長條換行接到下一週的，合併成同一行。
 - 截圖上有寫時間的，放在那一行最後面。
 - 同一天有好幾個活動，就分好幾行。`}
 function futureYmd(m,d,ref){if(m<1||m>12||d<1||d>31)return null;const r=parseYmd(ref);let c=new Date(r.getFullYear(),m-1,d);if(c.getMonth()!==m-1)return null;if(r-c>120*864e5)c=new Date(r.getFullYear()+1,m-1,d);return ymd(c)}
+/* 括號裡的字、被截斷的尾巴都不要：「週年晚會（台北）」→「週年晚會」、「戶外音樂節（場…」→「戶外音樂節」 */
+function cleanName(n){return String(n).replace(/[（(][^）)]*[）)]?/g,"").replace(/(\.{3}|…)+/g,"").replace(/[\u2600-\u27BF\u{1F000}-\u{1FAFF}\uFE0F]/gu,"").replace(/\s+/g," ").replace(/[\s\-－]+$/,"").trim()}
 function parseCal(txt){
   const t=today(),out=[],bad=[];
   for(const raw of String(txt||"").split(/\r?\n/)){
@@ -463,9 +519,11 @@ function parseCal(txt){
     const m=s.match(/^(\d{1,2})\/(\d{1,2})(?:\s*-\s*(?:(\d{1,2})\/)?(\d{1,2}))?\s+(.+)$/);
     if(!m){bad.push(raw.trim());continue}
     let name=m[5].trim(),time="";const tm=name.match(/\s+(\d{1,2}:\d{2})$/);if(tm){time=normTime(tm[1])||"";name=name.slice(0,tm.index).trim()}
+    name=cleanName(name);
     const date=futureYmd(+m[1],+m[2],t);if(!date||!name){bad.push(raw.trim());continue}
     let end="";if(m[4]){end=futureYmd(m[3]?+m[3]:+m[1],+m[4],date);if(!end||end<date){bad.push(raw.trim());continue}if(end===date)end=""}
     if((end||date)<t)continue;
+    if(out.some(x=>x.name===name&&x.date===date))continue;
     out.push({name,date,end,time});
   }
   out.sort((a,b)=>a.date.localeCompare(b.date)||(a.time||"").localeCompare(b.time||""));
@@ -515,7 +573,7 @@ function viewHist(){
   return`<div class="screen fade"><h1 class="lt1">紀錄</h1>
     <div class="quick" style="justify-content:flex-start">${months.slice(0,6).map(m=>`<button type="button" class="pill" data-month="${m}" style="${m===key?"border-color:var(--in);color:var(--in);font-weight:700":""}">${+m.slice(5)} 月</button>`).join("")}</div>
     <div class="total"><span>${+key.slice(5)} 月共 ${list.length} 次</span><b>${fmtH(total)}</b></div>
-    ${list.length?`<div class="card">${list.map(h=>`<div class="ev" style="flex-wrap:wrap"><span class="d">${mmdd(h.startDate).replace(/^(\d\d)(\d\d)$/,(_,a,b)=>`${+a}/${+b}`)}<small>週${WD[parseYmd(h.startDate).getDay()]}</small></span><span class="n">${esc(h.event)}<small class="num" style="font-size:15px">${h.startTime} – ${h.endTime}${h.endDate!==h.startDate?"（隔天）":""} · ${fmtH(shiftHours(h))}</small></span><button type="button" class="x" data-reopen="${h.id}">${entryReady()?"再開表單":"複製"}</button><button type="button" class="x" data-delhist="${h.id}">刪除</button>
+    ${list.length?`<div class="card">${list.map(h=>`<div class="ev" style="flex-wrap:wrap"><span class="d">${mmdd(h.startDate).replace(/^(\d\d)(\d\d)$/,(_,a,b)=>`${+a}/${+b}`)}<small>週${WD[parseYmd(h.startDate).getDay()]}</small></span><span class="n">${esc(h.event)}<small class="num" style="font-size:15px">${h.startTime} – ${h.endTime}${h.endDate!==h.startDate?"（隔天）":""} · ${fmtH(shiftHours(h))}${h.status==="pending"?` · <span style="color:var(--in)">還沒確認送出</span>`:""}</small></span><button type="button" class="x" data-reopen="${h.id}">${entryReady()?"再開表單":"複製"}</button><button type="button" class="x" data-delhist="${h.id}">刪除</button>
       ${S.copy===h.id?`<div style="flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;padding-top:8px">${[["Email",profile.email],["活動",h.event],["姓名",profile.name],["上班日期",mmdd(h.startDate)],["上班時間",h.startTime],["休息開始",h.breakStart],["休息結束",h.breakEnd],["下班日期",mmdd(h.endDate)],["下班時間",h.endTime],["交通",h.transport]].filter(x=>x[1]).map(([l,v])=>`<button type="button" class="pill" data-copy="${esc(v)}">${l}：${esc(v)}</button>`).join("")}</div>`:""}</div>`).join("")}</div>`:`<div class="empty">這個月還沒有打卡紀錄。</div>`}
     <p class="qhint" style="margin:0">紀錄只存在這支手機上。「再開表單」會重新打開填好的表單，不會重複送出，除非你再按一次提交。</p></div>`;
 }
