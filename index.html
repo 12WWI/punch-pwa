@@ -222,7 +222,7 @@ function breakOk(d){if(!d.breakStart||!d.breakEnd||!d.endTime)return true;const 
 /* 可能按錯（不擋，送出前問一次）：太長、太久以前、跟已經打過的卡重疊 */
 function timeWarnings(d){
   const out=[];if(!d.endTime)return out;
-  const h=shiftHours(d);if(h!=null&&h>16)out.push(`這次共 ${fmtH(h)}，比平常長很多`);
+  const h=shiftHours(d);if(h!=null&&h>18)out.push(`這次共 ${fmtH(h)}，比平常長很多`);
   if(minutesOf(d.startDate,d.startTime)<Date.now()/6e4-7*1440)out.push(`上班日期是 ${nice(d.startDate)}，已經是一個禮拜以前`);
   const s0=minutesOf(d.startDate,d.startTime),e0=minutesOf(d.endDate,d.endTime);
   const dup=history.find(x=>x.startDate&&x.startTime&&x.endDate&&x.endTime&&minutesOf(x.startDate,x.startTime)<e0&&s0<minutesOf(x.endDate,x.endTime));
