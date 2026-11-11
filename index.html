@@ -656,7 +656,14 @@ document.addEventListener("click",e=>{
 setInterval(()=>{if(S.wiz||S.tab!=="home")return;const n=new Date(),c=$("clk"),p=$("pt");if(c)c.textContent=`${pad(n.getHours())}:${pad(n.getMinutes())}`;if(p)p.textContent=floor5(n).time},5000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!S.wiz)render()});
 
-if("serviceWorker"in navigator&&location.protocol!=="file:")navigator.serviceWorker.register("sw.js").catch(()=>{});
+/* 自動更新：每次回到 App 都檢查新版；有新版就重新載入（正在填資料的話，等填完回到首頁再載入） */
+let reloadLater=false;
+if("serviceWorker"in navigator&&location.protocol!=="file:"){
+  const hadCtrl=!!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register("sw.js",{updateViaCache:"none"}).then(reg=>{document.addEventListener("visibilitychange",()=>{if(!document.hidden)reg.update().catch(()=>{})})}).catch(()=>{});
+  navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!hadCtrl)return;if(S.wiz||S.imp)reloadLater=true;else location.reload()});
+}
+setInterval(()=>{if(reloadLater&&!S.wiz&&!S.imp)location.reload()},2000);
 render();
 </script>
 </body>
