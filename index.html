@@ -174,6 +174,14 @@ const REQUIRED_KEYS=ENTRY_KEYS.slice(0,10); /* remark（備註）是選配：表
 let FORM_ID="",ENTRY={};
 function useCode(raw){try{const o=JSON.parse(atob(String(raw).replace(/\s/g,"")));if(typeof o.f!=="string"||!o.f||!Array.isArray(o.e)||o.e.length<REQUIRED_KEYS.length||o.e.length>ENTRY_KEYS.length||!o.e.every(x=>typeof x==="string"&&x))return false;FORM_ID=o.f;ENTRY=Object.fromEntries(ENTRY_KEYS.map((k,i)=>[k,o.e[i]||""]));return true}catch(_){return false}}
 try{useCode(localStorage.getItem("punch.code")||"")}catch(_){}
+/* 設定連結：網址 # 後面帶設定碼（# 後面的字不會傳到網站，只在手機裡讀） */
+const codeFrom=raw=>{const s=String(raw||"").trim();const m=s.match(/[#&]c=([^&\s]+)/);try{return m?decodeURIComponent(m[1]):s}catch(_){return s}};
+function saveCode(raw){const c=codeFrom(raw).replace(/\s/g,"");if(!useCode(c))return false;try{localStorage.setItem("punch.code",c)}catch(_){}return true}
+const IS_IOS=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+const IS_APP=matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
+let LINK_MSG="";
+try{if(/[#&]c=/.test(location.hash)){LINK_MSG=saveCode(location.hash)?"ok":"bad";window.history.replaceState(null,"",location.pathname)}}catch(_){}
+const shareLink=()=>location.origin+location.pathname+"?openExternalBrowser=1#c="+encodeURIComponent(localStorage.getItem("punch.code")||"");
 const TRANSPORT=["公司集合","自行前往（開車）來回","自行前往（機車）來回","大眾運輸"];
 const TRANSPORT_LABEL={"公司集合":["公司集合","一起從公司出發"],"自行前往（開車）來回":["自己開車","來回"],"自行前往（機車）來回":["自己騎車","來回"],"大眾運輸":["大眾運輸","捷運、公車、高鐵"]};
 
@@ -242,12 +250,15 @@ function formUrl(r){
 }
 
 /* ===== router ===== */
-let S={tab:"home",wiz:null,dir:"",imp:DB.get("imp",null)};
+let S={tab:"home",wiz:null,dir:"",imp:DB.get("imp",null),iosGuide:LINK_MSG==="ok"&&IS_IOS&&!IS_APP};
 if(S.imp)S.tab="cal";
 const saveImp=()=>DB.set("imp",S.imp);
 function render(){
   const a=$("app");
-  if(!entryReady()){$("tabs").hidden=true;a.innerHTML=`<div class="screen fade"><h2 class="q">貼上設定碼</h2><p class="qhint">第一次使用要輸入一次，之後不用再填。設定碼只存在這支手機。</p><textarea class="field" id="code" rows="5" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="設定碼"></textarea><button type="button" class="cta" data-savecode>確定</button></div>`;return}
+  if(S.iosGuide){$("tabs").hidden=true;a.innerHTML=`<div class="screen fade"><h2 class="q">設定好了，再加入主畫面</h2><p class="qhint">iPhone 主畫面上的 App 跟 Safari 是分開存的，照下面做一次就好。</p>
+    <div class="card" style="padding:14px 16px;line-height:1.9">1. 先按下面的「複製設定連結」<br>2. 按 Safari 下方的分享鈕 ⎙，選「加入主畫面」<br>3. 打開主畫面上的「打卡」<br>4. 如果它問設定碼，按「從剪貼簿貼上」</div>
+    <button type="button" class="cta" data-copylink>複製設定連結</button><button type="button" class="cta ghost" data-iosdone>好，我知道了</button></div>`;return}
+  if(!entryReady()){$("tabs").hidden=true;a.innerHTML=`<div class="screen fade"><h2 class="q">貼上設定碼</h2><p class="qhint">第一次使用要設定一次，之後不用再填。設定碼只存在這支手機。<br>同事傳給你的設定連結或設定碼，先複製，再按下面的按鈕。</p><button type="button" class="cta" data-pastecode>從剪貼簿貼上</button><p class="qhint" style="margin:14px 0 6px">貼不進去的話，長按下面的框框貼上：</p><textarea class="field" id="code" rows="4" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="設定碼"></textarea><button type="button" class="cta ghost" data-savecode>確定</button></div>`;return}
   if(!profile.email||!profile.name){if(!S.wiz||S.wiz.flow!=="setup")S.wiz=newWiz("setup")}
   $("tabs").hidden=!!S.wiz;
   a.innerHTML=S.wiz?viewWizard():S.tab==="home"?viewHome():S.tab==="cal"?viewCal():S.tab==="hist"?viewHist():viewSettings();
@@ -642,13 +653,18 @@ function viewSettings(){
     <div class="sech">預設交通方式</div>
     <div class="card">${TRANSPORT.map(t=>`<button type="button" class="crow" data-settrans="${esc(t)}"><span class="v">${TRANSPORT_LABEL[t][0]}</span>${profile.transport===t?'<span style="color:var(--in);font-weight:700">✓</span>':""}</button>`).join("")}</div>
     <div class="sech">表單</div>
-    <div class="card"><div class="crow"><span class="v">${ready?"表單已設定，送出時會自動填好":"表單還沒設定"}</span><span style="color:${ready?"var(--ok)":"var(--bad)"};font-weight:700">${ready?"✓":"!"}</span></div><button type="button" class="crow" data-resetcode><span class="v">重新輸入設定碼</span>${IC.chev}</button></div>
+    <div class="card"><div class="crow"><span class="v">${ready?"表單已設定，送出時會自動填好":"表單還沒設定"}</span><span style="color:${ready?"var(--ok)":"var(--bad)"};font-weight:700">${ready?"✓":"!"}</span></div>${ready?`<button type="button" class="crow" data-sharecode><span class="v">分享設定連結給同事</span>${IC.chev}</button>`:""}<button type="button" class="crow" data-resetcode><span class="v">重新輸入設定碼</span>${IC.chev}</button></div>
+    ${ready?'<p class="qhint" style="margin:-6px 0 14px">同事點連結就設定好，不用貼設定碼。連結裡有表單代碼，請私訊傳，不要貼到公開的地方。</p>':""}
     <button type="button" class="cta ghost" data-export>下載備份（行事曆和紀錄）</button>
     <p class="qhint" style="margin:0">資料只存在這支手機的瀏覽器裡。換手機或清除瀏覽資料前，記得先下載備份。</p></div>`;
 }
 
 document.addEventListener("click",e=>{
-  if(e.target.closest("[data-savecode]")){const v=$("code").value;if(!useCode(v)){toast("設定碼不正確，請重新貼上");return}try{localStorage.setItem("punch.code",v.replace(/\s/g,""))}catch(_){}toast("設定完成");render();return}
+  if(e.target.closest("[data-savecode]")){if(!saveCode($("code").value)){toast("設定碼不正確，請重新貼上");return}toast("設定完成");render();return}
+  if(e.target.closest("[data-pastecode]")){(navigator.clipboard&&navigator.clipboard.readText?navigator.clipboard.readText():Promise.reject()).then(v=>{if(!saveCode(v)){toast("剪貼簿裡不是設定連結，請重新複製");return}toast("設定完成");render()}).catch(()=>toast("讀不到剪貼簿，請長按框框貼上"));return}
+  if(e.target.closest("[data-copylink]")){(navigator.clipboard?navigator.clipboard.writeText(shareLink()):Promise.reject()).then(()=>toast("已複製設定連結")).catch(()=>toast("複製失敗，請到設定頁再試"));return}
+  if(e.target.closest("[data-iosdone]")){S.iosGuide=false;render();return}
+  if(e.target.closest("[data-sharecode]")){const url=shareLink();if(navigator.share){navigator.share({title:"打卡",text:"點開就會設定好打卡表單",url}).catch(()=>{});return}(navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject()).then(()=>toast("已複製設定連結，貼給同事")).catch(()=>toast("複製失敗"));return}
   if(e.target.closest("[data-resetcode]")){if(!confirm("要重新輸入設定碼嗎？行事曆和紀錄不會動。"))return;try{localStorage.removeItem("punch.code")}catch(_){}FORM_ID="";ENTRY={};render()}
 });
 
@@ -664,7 +680,7 @@ if("serviceWorker"in navigator&&location.protocol!=="file:"){
   navigator.serviceWorker.addEventListener("controllerchange",()=>{if(!hadCtrl)return;if(S.wiz||S.imp)reloadLater=true;else location.reload()});
 }
 setInterval(()=>{if(reloadLater&&!S.wiz&&!S.imp)location.reload()},2000);
-render();
+render();if(LINK_MSG==="ok")toast("設定完成");else if(LINK_MSG==="bad")toast("設定連結不完整，請同事重傳一次");
 </script>
 </body>
 </html>
