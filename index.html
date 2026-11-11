@@ -299,7 +299,7 @@ function viewHome(){
       <div class="status"><span class="sub">${evs.length?`今天行事曆：${evs.map(e=>esc(e.name)+(e.tag?"（昨天）":"")).join("、")}`:"今天行事曆沒有活動"}</span></div></div>
       <button type="button" class="linkbtn" data-go="manual">忘了打卡？手動補登一筆</button>`;
   }else{
-    const hrs=shiftHours({...shift,...floor5Out()}),long=hrs!=null&&hrs>=14;
+    const hrs=shiftHours({...shift,...floor5Out()}),long=hrs!=null&&hrs>=18;
     h+=`${long?`<div class="warn" style="display:flex;align-items:center;gap:10px"><span style="flex:1">上班已經 ${Math.floor(hrs)} 小時了，是不是忘了打下班卡？</span><button type="button" class="pill" data-go="outfix" style="flex:none">補下班時間</button></div>`:""}
       <div class="hero"><button type="button" class="punch out" data-go="out"><small>下班打卡</small><b class="num" id="pt">${floor5(now).time}</b><small>按下後選今天去的活動</small></button>
       <div class="status"><span class="big">上班中</span><span class="sub num">${hrs!=null&&hrs>=0?"已經 "+fmtH(hrs):""}</span></div></div>
