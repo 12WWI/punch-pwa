@@ -172,8 +172,7 @@ textarea.field{font-size:15px;line-height:1.5;padding:12px 14px;resize:vertical}
 const ENTRY_KEYS=["email","event","name","startDate","startTime","breakStart","breakEnd","endDate","endTime","transport","remark"];
 const REQUIRED_KEYS=ENTRY_KEYS.slice(0,10); /* remark（備註）是選配：表單有備註欄時，設定碼多帶一個代碼 */
 let FORM_ID="",ENTRY={};
-let APP_TITLE="打卡表"; /* 標題也放在設定碼裡（t），不寫在公開的程式碼 */
-function useCode(raw){try{const o=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(String(raw).replace(/\s/g,"")),c=>c.charCodeAt(0))));if(typeof o.f!=="string"||!o.f||!Array.isArray(o.e)||o.e.length<REQUIRED_KEYS.length||o.e.length>ENTRY_KEYS.length||!o.e.every(x=>typeof x==="string"&&x))return false;APP_TITLE=typeof o.t==="string"&&o.t.trim()?o.t.trim().slice(0,20):"打卡表";FORM_ID=o.f;ENTRY=Object.fromEntries(ENTRY_KEYS.map((k,i)=>[k,o.e[i]||""]));return true}catch(_){return false}}
+function useCode(raw){try{const o=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(String(raw).replace(/\s/g,"")),c=>c.charCodeAt(0))));if(typeof o.f!=="string"||!o.f||!Array.isArray(o.e)||o.e.length<REQUIRED_KEYS.length||o.e.length>ENTRY_KEYS.length||!o.e.every(x=>typeof x==="string"&&x))return false;FORM_ID=o.f;ENTRY=Object.fromEntries(ENTRY_KEYS.map((k,i)=>[k,o.e[i]||""]));return true}catch(_){return false}}
 try{useCode(localStorage.getItem("punch.code")||"")}catch(_){}
 /* 設定連結：網址 # 後面帶設定碼（# 後面的字不會傳到網站，只在手機裡讀） */
 const codeFrom=raw=>{const s=String(raw||"").trim();const m=s.match(/[#&]c=([^&\s]+)/);try{return m?decodeURIComponent(m[1]):s}catch(_){return s}};
@@ -276,7 +275,7 @@ $("tabs").addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if
 /* ===== 首頁 ===== */
 function viewHome(){
   const now=new Date(),t=today();
-  let h=`<div class="screen fade"><div class="top"><div><h1 class="num">${now.getFullYear()}/${pad(now.getMonth()+1)}/${pad(now.getDate())}</h1><div class="date">${esc(APP_TITLE)}</div></div><div class="clock num" id="clk">${pad(now.getHours())}:${pad(now.getMinutes())}</div></div>`;
+  let h=`<div class="screen fade"><div class="top"><div><div class="date">${now.getFullYear()}/${pad(now.getMonth()+1)}/${pad(now.getDate())}</div></div><div class="clock num" id="clk">${pad(now.getHours())}:${pad(now.getMinutes())}</div></div>`;
   h+=pendCard();
   if(!shift){
     const evs=dayEvents(t);const f=floor5(now);
