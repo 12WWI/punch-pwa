@@ -344,16 +344,18 @@ const STEP={
     const opts=[...evs.map(e=>({n:e.name,s:(e.tag?"昨天的行事曆":e.end&&e.end!==e.date?`行事曆 ${nice(e.date)}–${nice(e.end)}`:"今天的行事曆")+(e.time?` · ${e.time}`:"")})),...rec.map(n=>({n,s:"最近打卡過"}))];
     const isIn=w.flow==="in"&&!w.editOnly,last=isIn&&w.i===w.steps.length-1;
     return`<h2 class="q">今天是哪個活動？</h2>
-      <div class="inline"><input class="field" id="f" enterkeyhint="go" autocomplete="off" placeholder="輸入活動名稱" value="${esc(opts.some(o=>o.n===d.event)?"":d.event||"")}"${evs.length?"":" data-autof"}><button type="button" data-ok="event">${!isIn?"確定":last?"上班":"下一步"}</button></div>
+      <input class="field" id="f" enterkeyhint="done" autocomplete="off" placeholder="輸入活動名稱" value="${esc(opts.some(o=>o.n===d.event)?"":d.event||"")}"${evs.length?"":" data-autof"}>
       <p class="err" id="err"></p>
       ${opts.length?`<div class="chips">${opts.map((o,i)=>`<button type="button" class="chip${d.event===o.n?" on":""}" data-pick="event" data-v="${esc(o.n)}"><span class="lt">${String.fromCharCode(65+i)}</span><span>${esc(o.n)}<small>${o.s}</small></span></button>`).join("")}</div>`:""}
-      ${isIn&&d.transport&&last?`<div class="spacer"></div><div class="card"><button type="button" class="crow" data-jump="transport"><span class="k">交通</span><span class="v">${esc(tLabel(d.transport))}</span><span style="color:var(--muted);font-size:14px">改</span>${IC.chev}</button></div>`:""}`;
+      <div class="spacer"></div>
+      ${isIn&&d.transport&&last?`<div class="card"><button type="button" class="crow" data-jump="transport"><span class="k">交通</span><span class="v">${esc(tLabel(d.transport))}</span><span style="color:var(--muted);font-size:14px">改</span>${IC.chev}</button></div>`:""}
+      <button type="button" class="cta" data-ok="event">${!isIn?"確定":last?"上班打卡":"下一步"}</button>`;
   },
   transport:d=>`<h2 class="q">怎麼過去的？</h2>
     <div class="chips">${TRANSPORT.map((t,i)=>`<button type="button" class="chip${d.transport===t?" on":""}" data-pick="transport" data-v="${esc(t)}"><span class="lt">${String.fromCharCode(65+i)}</span><span>${TRANSPORT_LABEL[t][0]}<small>${TRANSPORT_LABEL[t][1]}</small></span></button>`).join("")}</div>
     <div class="or">其他方式</div>
-    <div class="inline"><input class="field" id="f" enterkeyhint="next" placeholder="例如：同事載" value="${esc(TRANSPORT.includes(d.transport)?"":d.transport||"")}"><button type="button" data-ok="transport">確定</button></div>
-    <p class="err" id="err"></p>`,
+    <input class="field" id="f" enterkeyhint="done" placeholder="例如：同事載" value="${esc(TRANSPORT.includes(d.transport)?"":d.transport||"")}">
+    <p class="err" id="err"></p><div class="spacer"></div><button type="button" class="cta" data-ok="transport">${S.wiz&&S.wiz.flow==="in"&&!S.wiz.editOnly&&S.wiz.i===S.wiz.steps.length-1?"上班打卡":"確定"}</button>`,
   startTime:d=>timeStep("幾點上班？",d.startTime,"startTime"),
   endTime:d=>timeStep("幾點下班？",d.endTime,"endTime"),
   break:d=>`<h2 class="q">中間有休息嗎？</h2><p class="qhint">輸入開始和結束時間（例如 1230）。</p>
@@ -413,7 +415,7 @@ function manualSubmit(){
 }
 function timeStep(q,val,key){
   const n=floor5(new Date()).time;
-  return`<h2 class="q">${q}</h2><p class="qhint">24 小時制，輸入 4 碼（例如 0830、2300）會自動跳回去。</p>
+  return`<h2 class="q">${q}</h2><p class="qhint">24 小時制，輸入 4 碼，例如 0830、2300。</p>
     <input class="field bigtime" id="f" inputmode="numeric" maxlength="5" placeholder="00:00" value="${val||""}" data-time="${key}">
     <div class="quick"><button type="button" class="pill" data-adj="-5" data-k="${key}">−5 分</button><button type="button" class="pill" data-setnow="${key}">現在 ${n}</button><button type="button" class="pill" data-adj="5" data-k="${key}">+5 分</button></div>
     <p class="err" id="err"></p><div class="spacer"></div><button type="button" class="cta" data-ok="${key}">確定</button>`;
@@ -438,8 +440,10 @@ function afterRender(){
   if(f&&S.wiz&&(!/^(event|transport)$/.test(stepKey())||f.hasAttribute("data-autof")))setTimeout(()=>{if(!f.isConnected)return;f.focus({preventScroll:true});try{numeric?f.select():f.setSelectionRange(f.value.length,f.value.length)}catch(_){}},180);
   if(numeric){f.onfocus=()=>setTimeout(()=>{try{f.select()}catch(_){}},0);f.onclick=()=>{try{f.select()}catch(_){}}}
   const auto=(key,ok)=>{clearTimeout(window.__adv);window.__adv=setTimeout(()=>{if($("f")===f&&stepKey()===key&&ok())commit(key)},260)};
-  if(f&&f.dataset.time)f.oninput=()=>{const s=f.value.replace(/[^\d]/g,"").slice(0,4);f.value=colonize(s);if(s.length===4){if(normTime(s))auto(f.dataset.time,()=>normTime(f.value));else setErr("沒有這個時間，請重新輸入。")}else setErr("")};
+  if(f&&f.dataset.time)f.oninput=()=>{const s=f.value.replace(/[^\d]/g,"").slice(0,4);f.value=colonize(s);setErr(s.length===4&&!normTime(s)?"沒有這個時間，請重新輸入。":"")};
   for(const id of["b1","b2"]){const el=$(id);if(el)el.oninput=()=>{const s=el.value.replace(/[^\d]/g,"").slice(0,4);el.value=colonize(s);if(s.length===4&&id==="b1")$("b2").focus()}}
+  if(f&&S.wiz&&/^(event|transport)$/.test(stepKey()))f.addEventListener("input",()=>{if(f.value.trim())document.querySelectorAll("[data-pick]").forEach(x=>x.classList.remove("on"))});
+  for(const id of["b1","b2"]){const el=$(id);if(el)el.addEventListener("input",()=>{const nb=document.querySelector("[data-nobreak]");if(nb&&el.value)nb.classList.remove("on")})}
   if(f)f.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();const ok=document.querySelector("[data-ok]");ok&&ok.click()}};
   /* 補登頁：打字時只更新時數，不重畫整頁 */
   if(S.wiz&&stepKey()==="manual"){
@@ -452,9 +456,10 @@ document.addEventListener("click",e=>{
   const go=t.closest("[data-go]");if(go){({in:startIn,out:startOut,outfix:startOutFix,manual:startManual})[go.dataset.go]();return}
   if(t.closest("[data-wback]")){back();return}
   const ok=t.closest("[data-ok]");if(ok){commit(ok.dataset.ok);return}
-  const pk=t.closest("[data-pick]");if(pk){S.wiz.data[pk.dataset.pick]=pk.dataset.v;buzz();document.querySelectorAll(`[data-pick="${pk.dataset.pick}"]`).forEach(x=>x.classList.toggle("on",x===pk));setTimeout(next,160);return}
-  if(t.closest("[data-nobreak]")){S.wiz.data.breakStart="";S.wiz.data.breakEnd="";buzz();setTimeout(next,140);return}
-  const sn=t.closest("[data-setnow]");if(sn){$("f").value=floor5(new Date()).time;setTimeout(()=>commit(sn.dataset.setnow),120);return}
+  /* 點選項只會選起來，按下面的按鈕才換頁 */
+  const pk=t.closest("[data-pick]");if(pk){S.wiz.data[pk.dataset.pick]=pk.dataset.v;buzz();document.querySelectorAll(`[data-pick="${pk.dataset.pick}"]`).forEach(x=>x.classList.toggle("on",x===pk));const f=$("f");if(f)f.value="";setErr("");return}
+  const nb=t.closest("[data-nobreak]");if(nb){S.wiz.data.breakStart="";S.wiz.data.breakEnd="";$("b1").value="";$("b2").value="";nb.classList.add("on");buzz();setErr("");return}
+  const sn=t.closest("[data-setnow]");if(sn){$("f").value=floor5(new Date()).time;setErr("");return}
   const adj=t.closest("[data-adj]");if(adj){const f=$("f"),cur=normTime(f.value)||floor5(new Date()).time;let[h,m]=cur.split(":").map(Number);let tot=(h*60+m+(+adj.dataset.adj)+1440)%1440;f.value=`${pad(Math.floor(tot/60))}:${pad(tot%60)}`;setErr("");return}
   const jp=t.closest("[data-jump]");if(jp){S.wiz.editOnly=jp.dataset.jump;S.dir="";render();return}
   if(t.closest("[data-submit]")){const d=S.wiz.data,h=shiftHours(d);if(!d.endTime){toast("還沒填下班時間，點「下班」那一行填");return}if(h!=null&&h<0){toast("下班時間比上班早，點「下班」那一行改");return}if(!d.event){toast("還沒選活動，點「活動」那一行");return}submitForm();return}
