@@ -34,7 +34,7 @@
 }}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
-html,body{height:100%;margin:0}
+html,body{height:100%;margin:0;overflow-x:hidden}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.5;-webkit-tap-highlight-color:transparent;overscroll-behavior:none;-webkit-user-select:none;user-select:none}
 input,textarea{-webkit-user-select:text;user-select:text}
 button,input{font:inherit;color:inherit}
@@ -42,7 +42,9 @@ button{cursor:pointer}
 :focus-visible{outline:2px solid var(--in);outline-offset:2px}
 .num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
 svg.i{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
-#app{min-height:100%;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px)}
+#app{min-height:100%;display:flex;flex-direction:column;padding-top:calc(env(safe-area-inset-top,0px) + 14px)}
+/* 頂端狀態列底下放一條實心底色：捲動的內容藏在它後面，不會被系統模糊 */
+.topshade{position:fixed;top:0;left:0;right:0;height:calc(env(safe-area-inset-top,0px) + 6px);background:var(--bg);z-index:6;pointer-events:none}
 .screen{flex:1;display:flex;flex-direction:column;padding:12px max(18px,env(safe-area-inset-left,0px)) calc(96px + env(safe-area-inset-bottom,0px)) max(18px,env(safe-area-inset-right,0px));max-width:560px;width:100%;margin:0 auto;gap:16px}
 .screen.full{padding-bottom:calc(20px + env(safe-area-inset-bottom,0px))}
 .fade{animation:fade .22s ease-out}
@@ -141,7 +143,10 @@ button.crow:active{background:var(--surface2)}
 .addbox{display:flex;flex-direction:column;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px}
 .addbox .row{display:flex;gap:8px;align-items:center}
 .addbox label{font-size:13px;color:var(--muted);width:36px;flex:none}
-.addbox input{flex:1;min-width:0;border:1px solid var(--line);background:var(--surface2);border-radius:11px;padding:11px 12px;font-size:16px}
+.addbox input{flex:1;min-width:0;width:100%;border:1px solid var(--line);background:var(--surface2);border-radius:11px;padding:11px 12px;font-size:16px}
+.addbox input[type=date]{-webkit-appearance:none;appearance:none;min-height:46px;text-align:left;display:block}
+.addbox input[type=date]::-webkit-date-and-time-value{text-align:left}
+.addbox .note{font-size:12.5px;color:var(--muted);margin:-4px 0 0 44px}
 
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;background:var(--glass);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-top:1px solid var(--line);padding:0 env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
 nav.tabs button{flex:1;border:0;background:transparent;display:flex;flex-direction:column;align-items:center;gap:1px;padding:8px 0 9px;font-size:11.5px;color:var(--muted)}
@@ -155,6 +160,7 @@ textarea.field{font-size:15px;line-height:1.5;padding:12px 14px;resize:vertical}
 </style>
 </head>
 <body>
+<div class="topshade" aria-hidden="true"></div>
 <div id="app"></div>
 <nav class="tabs" id="tabs" hidden></nav>
 <div class="toast" id="toast" role="status" hidden></div>
@@ -481,13 +487,15 @@ function viewCal(){
   if(S.imp)return viewImport();
   const t=today(),up=cal.filter(e=>(e.end||e.date)>=t&&!punched(e.name,e.end||e.date)).sort((a,b)=>a.date.localeCompare(b.date)||(a.time||"").localeCompare(b.time||""));
   const row=e=>{const d=parseYmd(e.date),live=e.date<=t;return`<div class="ev"><span class="d">${d.getMonth()+1}/${d.getDate()}<small>週${WD[d.getDay()]}</small></span><span class="n">${esc(e.name)}<small>${[e.end&&e.end!==e.date?`到 ${nice(e.end)}`:"",e.time||"",live&&punched(e.name,t)?"今天已打卡":""].filter(Boolean).join(" · ")}</small></span><button type="button" class="x" data-delcal="${e.id}">刪除</button></div>`};
-  return`<div class="screen fade"><h1 class="lt1">行事曆</h1><p class="qhint" style="margin:0">排好的活動，打卡時會出現讓你點。過去的和打完卡的會自動消失。</p>
-    <button type="button" class="cta" data-impopen>從截圖匯入行程</button>
+  return`<div class="screen fade"><h1 class="lt1">行事曆</h1>
+    <div class="addbox"><div class="row"><label for="cName">活動</label><input id="cName" placeholder="活動名稱" enterkeyhint="done" autocomplete="off"></div>
+      <div class="row"><label for="cDate">日期</label><input id="cDate" type="date" value="${t}"></div>
+      <div class="row"><label for="cEnd">到</label><input id="cEnd" type="date" aria-label="結束日期（選填）"></div>
+      <p class="note">只有一天的話，「到」不用填。</p>
+      <button type="button" class="cta" data-addcal style="padding:13px">加入行事曆</button></div>
+    <button type="button" class="cta ghost" data-impopen>從截圖匯入行程</button>
     <div class="sech">接下來</div>${up.length?`<div class="card">${up.map(row).join("")}</div>`:`<div class="empty">還沒有排活動。</div>`}
-    <div class="sech">手動加一筆</div>
-    <div class="addbox"><div class="row"><label for="cName">活動</label><input id="cName" placeholder="例如：週年晚會" enterkeyhint="done"></div>
-      <div class="row"><label for="cDate">日期</label><input id="cDate" type="date" value="${t}"><span style="color:var(--muted)">到</span><input id="cEnd" type="date" aria-label="結束日期（選填）"></div>
-      <button type="button" class="cta ghost" data-addcal style="padding:13px">加入行事曆</button></div></div>`;
+    <p class="qhint" style="margin:0">打卡時會列出當天的場次讓你點。過去的和打完卡的會自動消失。</p></div>`;
 }
 function addCal(){
   const n=$("cName").value.trim(),d=$("cDate").value,e=$("cEnd").value;
