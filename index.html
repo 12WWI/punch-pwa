@@ -83,10 +83,10 @@ button.crow:active{background:var(--surface2)}
 /* wizard */
 .wtop{display:flex;align-items:center;gap:8px;min-height:44px}
 .back{border:0;background:transparent;color:var(--in);display:flex;align-items:center;font-size:16px;padding:6px 6px 6px 0}
-.dots{flex:1;display:flex;gap:5px;justify-content:center}
+.dots{flex:1;display:flex;gap:8px;align-items:center;justify-content:center}
 .dots i{width:22px;height:4px;border-radius:2px;background:var(--line)}
 .dots i.on{background:var(--in)}
-.boba{font-size:20px;line-height:1;opacity:.25;filter:grayscale(1)}
+.boba{font-size:30px;line-height:1;opacity:.25;filter:grayscale(1)}
 .boba.on{opacity:1;filter:none}
 .wflow-out .dots i.on{background:var(--out)}
 .skip{border:0;background:transparent;color:var(--muted);font-size:15px;padding:6px 0 6px 6px;min-width:44px;text-align:right}
@@ -253,7 +253,12 @@ function formUrl(r){
 let S={tab:"home",wiz:null,dir:"",imp:DB.get("imp",null),iosGuide:LINK_MSG==="ok"&&IS_IOS&&!IS_APP};
 if(S.imp)S.tab="cal";
 const saveImp=()=>DB.set("imp",S.imp);
-function render(){
+/* 只有換到不同畫面才播滑入動畫；同一個畫面裡點選項只更新內容，不晃 */
+let lastScreen="";
+function screenKey(){const w=S.wiz,im=S.imp;return JSON.stringify([!!S.iosGuide,entryReady(),S.tab,w?[w.flow,w.i,w.editOnly||""]:0,im?im.step||1:0])}
+function calmRender(){renderScreen();const k=screenKey();if(k===lastScreen){const f=$("app").querySelector(".fade");if(f)f.classList.remove("fade","back")}lastScreen=k}
+function render(){calmRender()}
+function renderScreen(){
   const a=$("app");
   if(S.iosGuide){$("tabs").hidden=true;a.innerHTML=`<div class="screen fade"><h2 class="q">設定好了，再加入主畫面</h2><p class="qhint">iPhone 主畫面上的 App 跟 Safari 是分開存的，照下面做一次就好。</p>
     <div class="card" style="padding:14px 16px;line-height:1.9">1. 先按下面的「複製設定連結」<br>2. 按 Safari 下方的分享鈕 ⎙，選「加入主畫面」<br>3. 打開主畫面上的「打卡」<br>4. 如果它問設定碼，按「從剪貼簿貼上」</div>
