@@ -219,8 +219,18 @@ const addDays=(ymdStr,n)=>{const x=parseYmd(ymdStr);return ymd(new Date(x.getFul
 function fitStartDate(d,time){const ref=d.endDate&&d.endTime?minutesOf(d.endDate,d.endTime):Date.now()/6e4;const base=d.startDate||today();for(const n of[1,0,-1]){const c=addDays(base,n);if(minutesOf(c,time)<=ref)return c}return addDays(base,-1)}
 /* 休息要在上下班之間（可以跨午夜） */
 function breakOk(d){if(!d.breakStart||!d.breakEnd||!d.endTime)return true;const s0=minutesOf(d.startDate,d.startTime),e0=minutesOf(d.endDate,d.endTime);let b1=minutesOf(d.startDate,d.breakStart);if(b1<s0)b1+=1440;let b2=minutesOf(d.startDate,d.breakEnd);while(b2<=b1)b2+=1440;return b2<=e0}
-/* 送出前檢查：時數不能是負的或 0、休息要在上下班之間 */
-function timeProblem(d){if(!d.endTime)return"";const h=shiftHours(d);if(minutesOf(d.endDate,d.endTime)<=minutesOf(d.startDate,d.startTime))return"下班時間比上班早，請點「上班」或「下班」修改。";if(!breakOk(d))return"休息時間不在上下班之間，請點「休息」修改。";if(h!=null&&h<=0)return"扣掉休息後時數是 0，請檢查休息時間。";return""}
+/* 可能按錯（不擋，送出前問一次）：太長、太久以前、跟已經打過的卡重疊 */
+function timeWarnings(d){
+  const out=[];if(!d.endTime)return out;
+  const h=shiftHours(d);if(h!=null&&h>16)out.push(`這次共 ${fmtH(h)}，比平常長很多`);
+  if(minutesOf(d.startDate,d.startTime)<Date.now()/6e4-7*1440)out.push(`上班日期是 ${nice(d.startDate)}，已經是一個禮拜以前`);
+  const s0=minutesOf(d.startDate,d.startTime),e0=minutesOf(d.endDate,d.endTime);
+  const dup=history.find(x=>x.startDate&&x.startTime&&x.endDate&&x.endTime&&minutesOf(x.startDate,x.startTime)<e0&&s0<minutesOf(x.endDate,x.endTime));
+  if(dup)out.push(`跟 ${nice(dup.startDate)}「${dup.event}」${dup.startTime}–${dup.endTime} 時間重疊，可能重複打卡了`);
+  return out;
+}
+/* 一定錯的（擋下來）：時數是負的或 0、休息不在上下班之間、時間還沒到 */
+function timeProblem(d){if(!d.endTime)return"";const h=shiftHours(d),nowM=Date.now()/6e4;if(minutesOf(d.startDate,d.startTime)>nowM+10)return"上班時間還沒到，請檢查日期和時間。";if(minutesOf(d.endDate,d.endTime)>nowM+10)return"下班時間還沒到，請檢查日期和時間。";if(minutesOf(d.endDate,d.endTime)<=minutesOf(d.startDate,d.startTime))return"下班時間比上班早，請點「上班」或「下班」修改。";if(!breakOk(d))return"休息時間不在上下班之間，請點「休息」修改。";if(h!=null&&h<=0)return"扣掉休息後時數是 0，請檢查休息時間。";return""}
 let tt;function toast(m){const t=$("toast");t.textContent=m;t.hidden=false;clearTimeout(tt);tt=setTimeout(()=>t.hidden=true,2600)}
 function buzz(){try{navigator.vibrate&&navigator.vibrate(12)}catch(_){}}
 const IC={
@@ -341,6 +351,7 @@ function editShift(){S.wiz=newWiz("edit",{...shift});S.wiz.editOnly="startTime";
 function submitForm(){
   const w=S.wiz,d=w.data;
   {const pr=timeProblem(d);if(pr){if(w.flow==="manual")return setErr(pr);toast(pr);return}}
+  {const ws=timeWarnings(d);if(ws.length&&!confirm(ws.join("\n")+"\n\n確定要送出嗎？"))return}
   const events=d.events.map(e=>({name:e.name,transport:e.transport}));
   const trs=w.flow==="manual"?[...d.trs]:[...new Set(events.map(e=>e.transport).filter(Boolean))];
   const rec={id:rid(),event:events.map(e=>e.name).join("、"),events,startDate:d.startDate,startTime:d.startTime,breakStart:d.breakStart||"",breakEnd:d.breakEnd||"",endDate:d.endDate,endTime:d.endTime,transport:trs,trNote:w.flow==="manual"?"":trNoteOf(events),openedAt:new Date().toISOString(),status:"pending"};
@@ -407,12 +418,12 @@ const STEP={
     const same=new Set(d.events.map(e=>e.transport)).size<=1;
     const tv=d.events.length?(same?esc(tLabel(d.events[0].transport)):d.events.map(e=>`${esc(e.name)}：${esc(tLabel(e.transport))}`).join("<br>")):"";
     const row=(label,val,step)=>`<button type="button" class="crow" data-jump="${step}"><span class="k">${label}</span><span class="v${val?"":" none"}">${val||"（沒有）"}</span>${IC.chev}</button>`;
-    return`<h2 class="q">確認一下</h2><p class="qhint">點任何一行可以修改。${hrs!=null&&!timeProblem(d)?`這次共 <b class="num" style="font-size:18px">${fmtH(hrs)}</b>`:""}</p>${timeProblem(d)?`<div class="warn">${esc(timeProblem(d))}</div>`:""}
+    return`<h2 class="q">確認一下</h2><p class="qhint">點任何一行可以修改。${hrs!=null&&!timeProblem(d)?`這次共 <b class="num" style="font-size:18px">${fmtH(hrs)}</b>`:""}</p>${timeProblem(d)?`<div class="warn">${esc(timeProblem(d))}</div>`:timeWarnings(d).map(x=>`<div class="warn">請確認：${esc(x)}</div>`).join("")}
       <div class="card review">
         ${row("活動",esc(d.events.map(e=>e.name).join("、")),"events")}
         ${row("上班",`<span class="num" style="font-size:19px">${md(d.startDate)}　${d.startTime}</span>`,"startTime")}
         ${row("休息",d.breakStart&&d.breakEnd?`<span class="num" style="font-size:19px">${d.breakStart} – ${d.breakEnd}</span>`:"","break")}
-        ${row("下班",noEnd?"":`<span class="num" style="font-size:19px">${md(d.endDate)}　${d.endTime}</span>`,"endTime")}
+        ${row("下班",noEnd?"":`<span class="num" style="font-size:19px">${md(d.endDate)}　${d.endTime}</span>${d.endDate!==d.startDate?' <b style="color:var(--in);font-size:14px">隔天</b>':""}`,"endTime")}
         ${row("交通",tv,"legs")}
       </div>
       ${trNoteOf(d.events)?`<p class="qhint" style="margin:0">交通不一樣，表單的「其他」會寫：${esc(trNoteOf(d.events))}</p>`:""}
