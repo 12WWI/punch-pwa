@@ -143,6 +143,11 @@ button.crow:active{background:var(--surface2)}
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;background:var(--glass);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-top:1px solid var(--line);padding:0 env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
 nav.tabs button{flex:1;border:0;background:transparent;display:flex;flex-direction:column;align-items:center;gap:1px;padding:8px 0 9px;font-size:11.5px;color:var(--muted)}
 nav.tabs button[aria-current="page"]{color:var(--in);font-weight:700}
+.imp{display:flex;flex-direction:column;gap:10px;margin:0;padding:0;list-style:none;counter-reset:n}
+.imp li{display:flex;gap:10px;font-size:15px;line-height:1.45;counter-increment:n}
+.imp li::before{content:counter(n);flex:none;width:24px;height:24px;border-radius:50%;background:var(--in-soft);color:var(--in);font-family:var(--f-num);font-weight:700;display:grid;place-items:center}
+textarea.field{font-size:15px;line-height:1.5;padding:12px 14px;resize:vertical}
+.promptbox{white-space:pre-wrap;font-size:13px;background:var(--surface2);border-radius:12px;padding:12px;-webkit-user-select:text;user-select:text}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(100px + env(safe-area-inset-bottom,0px));z-index:9;background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-size:15px;max-width:calc(100% - 40px);text-align:center}
 </style>
 </head>
@@ -163,10 +168,12 @@ const TRANSPORT_LABEL={"公司集合":["公司集合","一起從公司出發"],"
 /* ===== storage ===== */
 const DB={get(k,d){try{const v=localStorage.getItem("punch."+k);return v==null?d:JSON.parse(v)}catch(_){return d}},set(k,v){try{localStorage.setItem("punch."+k,JSON.stringify(v))}catch(_){}}};
 let profile=DB.get("profile",{email:"",name:"",transport:""});
-let cal=DB.get("cal",[]);            // [{id,date,end,name}]
+let cal=DB.get("cal",[]);            // [{id,date,end,name,time,src}]
 let shift=DB.get("shift",null);      // 上班中的紀錄
 let history=DB.get("history",[]);    // 送出過的紀錄
 const save=()=>{DB.set("profile",profile);DB.set("cal",cal);DB.set("shift",shift);DB.set("history",history)};
+/* 已經過去的行程不留 */
+{const t=(d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`)(new Date());const n=cal.length;cal=cal.filter(e=>(e.end||e.date)>=t);if(cal.length!==n)DB.set("cal",cal)}
 
 /* ===== helpers ===== */
 const $=id=>document.getElementById(id);
@@ -199,7 +206,9 @@ const IC={
 };
 
 /* ===== 行事曆 → 今天的活動選項 ===== */
-function eventsOn(d){return cal.filter(e=>e.date<=d&&d<=(e.end||e.date)).sort((a,b)=>a.name.localeCompare(b.name,"zh-Hant"))}
+/* 這天已經打卡送出過的活動就不再列出（跨好幾天的活動，隔天會再出現） */
+const punched=(name,d)=>history.some(h=>h.event===name&&h.startDate===d);
+function eventsOn(d){return cal.filter(e=>e.date<=d&&d<=(e.end||e.date)&&!punched(e.name,d)).sort((a,b)=>(a.time||"").localeCompare(b.time||"")||a.name.localeCompare(b.name,"zh-Hant"))}
 function recentNames(exclude){const seen=new Set(exclude);const out=[];for(const h of[...history].reverse()){if(h.event&&!seen.has(h.event)){seen.add(h.event);out.push(h.event)}if(out.length>=4)break}return out}
 
 /* ===== 表單網址 ===== */
@@ -216,7 +225,9 @@ function formUrl(r){
 }
 
 /* ===== router ===== */
-let S={tab:"home",wiz:null,dir:""};
+let S={tab:"home",wiz:null,dir:"",imp:DB.get("imp",null)};
+if(S.imp)S.tab="cal";
+const saveImp=()=>DB.set("imp",S.imp);
 function render(){
   const a=$("app");
   if(!entryReady()){$("tabs").hidden=true;a.innerHTML=`<div class="screen fade"><h2 class="q">貼上設定碼</h2><p class="qhint">第一次使用要輸入一次，之後不用再填。設定碼只存在這支手機。</p><textarea class="field" id="code" rows="5" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="設定碼"></textarea><button type="button" class="cta" data-savecode>確定</button></div>`;return}
@@ -312,7 +323,7 @@ const STEP={
     <p class="err" id="err"></p><div class="spacer"></div><button type="button" class="cta" data-ok="name">完成</button>`,
   event:d=>{
     const ref=d.startDate||today(),evs=eventsOn(ref),rec=recentNames(evs.map(e=>e.name));
-    const opts=[...evs.map(e=>({n:e.name,s:e.end&&e.end!==e.date?`行事曆 ${nice(e.date)}–${nice(e.end)}`:"今天的行事曆"})),...rec.map(n=>({n,s:"最近打卡過"}))];
+    const opts=[...evs.map(e=>({n:e.name,s:(e.end&&e.end!==e.date?`行事曆 ${nice(e.date)}–${nice(e.end)}`:"今天的行事曆")+(e.time?` · ${e.time}`:"")})),...rec.map(n=>({n,s:"最近打卡過"}))];
     return`<h2 class="q">今天是哪個活動？</h2>
       <div class="chips">${opts.map((o,i)=>`<button type="button" class="chip${d.event===o.n?" on":""}" data-pick="event" data-v="${esc(o.n)}"><span class="lt">${String.fromCharCode(65+i)}</span><span>${esc(o.n)}<small>${o.s}</small></span></button>`).join("")||`<div class="empty">${ref===today()?"今天":"這天"}的行事曆沒有活動，直接在下面輸入。<br>之後可以在「行事曆」先排好，打卡時點一下就好。</div>`}</div>
       <div class="or">${opts.length?"或手動輸入":"手動輸入"}</div>
@@ -413,20 +424,87 @@ document.addEventListener("click",e=>{
 
 /* ===== 行事曆 ===== */
 function viewCal(){
-  const t=today(),up=cal.filter(e=>(e.end||e.date)>=t).sort((a,b)=>a.date.localeCompare(b.date)),past=cal.filter(e=>(e.end||e.date)<t).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,10);
-  const row=e=>{const d=parseYmd(e.date);return`<div class="ev"><span class="d">${d.getMonth()+1}/${d.getDate()}<small>週${WD[d.getDay()]}${e.end&&e.end!==e.date?" – "+nice(e.end):""}</small></span><span class="n">${esc(e.name)}</span><button type="button" class="x" data-delcal="${e.id}">刪除</button></div>`};
-  return`<div class="screen fade"><h1 class="lt1">行事曆</h1><p class="qhint" style="margin:0">先排好活動，打卡時就會出現 A、B、C 讓你點。</p>
+  if(S.imp)return viewImport();
+  const t=today(),up=cal.filter(e=>(e.end||e.date)>=t&&!punched(e.name,e.end||e.date)).sort((a,b)=>a.date.localeCompare(b.date)||(a.time||"").localeCompare(b.time||""));
+  const row=e=>{const d=parseYmd(e.date),live=e.date<=t;return`<div class="ev"><span class="d">${d.getMonth()+1}/${d.getDate()}<small>週${WD[d.getDay()]}</small></span><span class="n">${esc(e.name)}<small>${[e.end&&e.end!==e.date?`到 ${nice(e.end)}`:"",e.time||"",live&&punched(e.name,t)?"今天已打卡":""].filter(Boolean).join(" · ")}</small></span><button type="button" class="x" data-delcal="${e.id}">刪除</button></div>`};
+  return`<div class="screen fade"><h1 class="lt1">行事曆</h1><p class="qhint" style="margin:0">排好的活動，打卡時會出現讓你點。過去的和打完卡的會自動消失。</p>
+    <button type="button" class="cta" data-impopen>從截圖匯入行程</button>
+    <div class="sech">接下來</div>${up.length?`<div class="card">${up.map(row).join("")}</div>`:`<div class="empty">還沒有排活動。</div>`}
+    <div class="sech">手動加一筆</div>
     <div class="addbox"><div class="row"><label for="cName">活動</label><input id="cName" placeholder="例如：週年晚會" enterkeyhint="done"></div>
       <div class="row"><label for="cDate">日期</label><input id="cDate" type="date" value="${t}"><span style="color:var(--muted)">到</span><input id="cEnd" type="date" aria-label="結束日期（選填）"></div>
-      <button type="button" class="cta" data-addcal style="padding:13px">加入行事曆</button></div>
-    <div class="sech">接下來</div>${up.length?`<div class="card">${up.map(row).join("")}</div>`:`<div class="empty">還沒有排活動。</div>`}
-    ${past.length?`<div class="sech">之前</div><div class="card">${past.map(row).join("")}</div>`:""}</div>`;
+      <button type="button" class="cta ghost" data-addcal style="padding:13px">加入行事曆</button></div></div>`;
 }
 function addCal(){
   const n=$("cName").value.trim(),d=$("cDate").value,e=$("cEnd").value;
   if(!n){toast("請輸入活動名稱");$("cName").focus();return}if(!d){toast("請選日期");return}
   cal.push({id:rid(),name:n,date:d,end:e&&e>d?e:""});save();toast(`已加入 ${nice(d)} ${n}`);render();
 }
+
+/* ===== 從截圖匯入：提示詞交給自己的 AI App，結果貼回來 ===== */
+function calPrompt(){const t=today();return`這是一張工作行事曆的截圖。請整理成下面的格式，每個活動一行，全部放在一個程式碼區塊裡，不要加其他說明：
+
+月/日 活動名稱
+月/日-月/日 活動名稱
+月/日 活動名稱 13:00
+
+規則：
+- 今天是 ${t.slice(0,4)} 年 ${md(t)}。${md(t)} 以前就結束的活動不要列。
+- 活動名稱照截圖上的字，一字不改，不要加 emoji 或符號。名稱被截斷的，照看得到的部分寫，後面加「…」。
+- 跨好幾天的長條寫起訖日期；長條換行接到下一週的，合併成同一行。
+- 截圖上有寫時間的，放在那一行最後面。
+- 同一天有好幾個活動，就分好幾行。`}
+function futureYmd(m,d,ref){if(m<1||m>12||d<1||d>31)return null;const r=parseYmd(ref);let c=new Date(r.getFullYear(),m-1,d);if(c.getMonth()!==m-1)return null;if(r-c>120*864e5)c=new Date(r.getFullYear()+1,m-1,d);return ymd(c)}
+function parseCal(txt){
+  const t=today(),out=[],bad=[];
+  for(const raw of String(txt||"").split(/\r?\n/)){
+    let s=raw.trim();if(!s||/^`{3}/.test(s))continue;
+    s=s.replace(/^[-*•·>]+\s*/,"").replace(/／/g,"/").replace(/：/g,":").replace(/[~～–—至到]/g,"-");
+    const m=s.match(/^(\d{1,2})\/(\d{1,2})(?:\s*-\s*(?:(\d{1,2})\/)?(\d{1,2}))?\s+(.+)$/);
+    if(!m){bad.push(raw.trim());continue}
+    let name=m[5].trim(),time="";const tm=name.match(/\s+(\d{1,2}:\d{2})$/);if(tm){time=normTime(tm[1])||"";name=name.slice(0,tm.index).trim()}
+    const date=futureYmd(+m[1],+m[2],t);if(!date||!name){bad.push(raw.trim());continue}
+    let end="";if(m[4]){end=futureYmd(m[3]?+m[3]:+m[1],+m[4],date);if(!end||end<date){bad.push(raw.trim());continue}if(end===date)end=""}
+    if((end||date)<t)continue;
+    out.push({name,date,end,time});
+  }
+  out.sort((a,b)=>a.date.localeCompare(b.date)||(a.time||"").localeCompare(b.time||""));
+  return{out,bad};
+}
+/* 匯入範圍內，之前匯入的行程換成新的（行程有改就跟著改）；手動加的不動 */
+function applyImport(list){
+  const lo=list.reduce((a,e)=>e.date<a?e.date:a,"9999-99-99"),hi=list.reduce((a,e)=>(e.end||e.date)>a?(e.end||e.date):a,"");
+  cal=cal.filter(e=>!(e.src==="img"&&e.date>=lo&&e.date<=hi));
+  let n=0;for(const e of list){if(cal.some(x=>x.name===e.name&&x.date===e.date))continue;cal.push({id:rid(),...e,src:"img"});n++}
+  save();return n;
+}
+function viewImport(){
+  const im=S.imp;
+  const head=`<div class="screen fade"><div class="wtop"><button type="button" class="back" data-impcancel>${IC.back}${im.step==="preview"?"上一步":"取消"}</button><div class="dots"></div><span class="skip"></span></div>`;
+  if(im.step==="preview"){
+    const{out,bad}=parseCal(im.text);
+    return head+`<h2 class="q">確認行程</h2><p class="qhint">共 ${out.length} 筆。名字有錯可以先匯入，再到行事曆刪掉重加。</p>
+      ${out.length?`<div class="card">${out.map(e=>{const d=parseYmd(e.date);return`<div class="ev"><span class="d">${d.getMonth()+1}/${d.getDate()}<small>週${WD[d.getDay()]}</small></span><span class="n">${esc(e.name)}<small>${[e.end?`到 ${nice(e.end)}`:"",e.time].filter(Boolean).join(" · ")}</small></span></div>`}).join("")}</div>`:`<div class="empty">沒有讀到行程。請確認貼上的是 AI 回的那段文字。</div>`}
+      ${bad.length?`<div class="warn">這幾行看不懂，不會匯入：<br>${bad.map(esc).join("<br>")}</div>`:""}
+      <div class="spacer"></div><button type="button" class="cta" data-impgo ${out.length?"":"disabled"}>匯入 ${out.length} 筆</button></div>`;
+  }
+  return head+`<h2 class="q">從截圖匯入行程</h2>
+    <ol class="imp"><li>按「複製提示詞」。</li><li>打開 Claude 或 ChatGPT App，貼上提示詞，再附上行事曆截圖送出。</li><li>把 AI 回的整段文字複製，回來貼在下面。</li></ol>
+    <button type="button" class="cta ghost" data-copyprompt>複製提示詞</button>
+    ${im.showPrompt?`<div class="promptbox">${esc(calPrompt())}</div>`:""}
+    <textarea class="field" id="impText" rows="8" autocomplete="off" spellcheck="false" placeholder="例如：&#10;11/22 週年晚會&#10;11/23-11/24 戶外音樂節">${esc(im.text||"")}</textarea>
+    <p class="qhint" style="margin:0">今天以前的日期會自動略過。同一段日期裡之前匯入的行程，會換成這次的版本。</p>
+    <div class="spacer"></div><button type="button" class="cta" data-impcheck>下一步</button></div>`;
+}
+document.addEventListener("input",e=>{if(e.target.id==="impText"&&S.imp){S.imp.text=e.target.value;saveImp()}});
+document.addEventListener("click",e=>{
+  const t=e.target;
+  if(t.closest("[data-impopen]")){S.imp={step:"paste",text:""};saveImp();render();window.scrollTo(0,0);return}
+  if(t.closest("[data-impcancel]")){if(S.imp.step==="preview")S.imp.step="paste";else S.imp=null;saveImp();render();return}
+  if(t.closest("[data-copyprompt]")){const p=calPrompt();(navigator.clipboard?navigator.clipboard.writeText(p):Promise.reject()).then(()=>toast("已複製提示詞，去 AI App 貼上")).catch(()=>{S.imp.showPrompt=true;render();toast("請長按下面的文字自己複製")});return}
+  if(t.closest("[data-impcheck]")){const v=$("impText").value;if(!v.trim()){toast("先把 AI 回的文字貼上");return}S.imp.text=v;S.imp.step="preview";saveImp();render();window.scrollTo(0,0);return}
+  if(t.closest("[data-impgo]")){const{out}=parseCal(S.imp.text);const n=applyImport(out);S.imp=null;saveImp();toast(`已匯入 ${out.length} 筆行程`);render();window.scrollTo(0,0);return}
+});
 
 /* ===== 紀錄 ===== */
 function viewHist(){
