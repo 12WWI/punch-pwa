@@ -169,10 +169,10 @@ textarea.field{font-size:15px;line-height:1.5;padding:12px 14px;resize:vertical}
 <script>
 /* ===== 表單設定 =====
    表單資訊不寫在程式裡：第一次使用時貼上設定碼，只存在這支手機。 */
-const ENTRY_KEYS=["email","event","name","startDate","startTime","breakStart","breakEnd","endDate","endTime","transport","remark"];
-const REQUIRED_KEYS=ENTRY_KEYS.slice(0,10); /* remark（備註）是選配：表單有備註欄時，設定碼多帶一個代碼 */
+const ENTRY_KEYS=["email","event","name","startDate","startTime","breakStart","breakEnd","endDate","endTime","transport"];
+const REQUIRED_KEYS=ENTRY_KEYS;
 let FORM_ID="",ENTRY={};
-function useCode(raw){try{const o=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(String(raw).replace(/\s/g,"")),c=>c.charCodeAt(0))));if(typeof o.f!=="string"||!o.f||!Array.isArray(o.e)||o.e.length<REQUIRED_KEYS.length||o.e.length>ENTRY_KEYS.length||!o.e.every(x=>typeof x==="string"&&x))return false;FORM_ID=o.f;ENTRY=Object.fromEntries(ENTRY_KEYS.map((k,i)=>[k,o.e[i]||""]));return true}catch(_){return false}}
+function useCode(raw){try{const o=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(String(raw).replace(/\s/g,"")),c=>c.charCodeAt(0))));if(typeof o.f!=="string"||!o.f||!Array.isArray(o.e)||o.e.length<REQUIRED_KEYS.length||!o.e.every(x=>typeof x==="string"&&x))return false;FORM_ID=o.f;ENTRY=Object.fromEntries(ENTRY_KEYS.map((k,i)=>[k,o.e[i]||""]));return true}catch(_){return false}}
 try{useCode(localStorage.getItem("punch.code")||"")}catch(_){}
 /* 設定連結：網址 # 後面帶設定碼（# 後面的字不會傳到網站，只在手機裡讀） */
 const codeFrom=raw=>{const s=String(raw||"").trim();const m=s.match(/[#&]c=([^&\s]+)/);try{return m?decodeURIComponent(m[1]):s}catch(_){return s}};
@@ -240,7 +240,7 @@ const entryReady=()=>!!FORM_ID&&REQUIRED_KEYS.every(k=>ENTRY[k]);
 function formUrl(r){
   const p=new URLSearchParams({usp:"pp_url"});
   const put=(k,v)=>{const id=ENTRY[k];if(!id||v==null||v==="")return;p.append(id,v)};
-  put("email",profile.email);put("event",r.event+(r.remark&&!ENTRY.remark?`（${r.remark}）`:""));put("name",profile.name);if(ENTRY.remark)put("remark",r.remark);
+  put("email",profile.email);put("event",r.event);put("name",profile.name);
   put("startDate",mmdd(r.startDate));put("startTime",r.startTime);
   put("breakStart",r.breakStart);put("breakEnd",r.breakEnd);
   put("endDate",mmdd(r.endDate));put("endTime",r.endTime);
@@ -303,17 +303,6 @@ function pendCard(){
     <div class="inline3"><button type="button" class="cta" data-pend="ok" data-id="${r.id}">送出了</button><button type="button" class="cta ghost" data-pend="again" data-id="${r.id}">再開一次</button><button type="button" class="cta ghost" data-pend="drop" data-id="${r.id}">不送了</button></div></div></div>`;
 }
 
-/* ===== 備註 ===== */
-const MEALS=["午餐餐費報帳","晚餐餐費報帳"];
-/* 備註 = 餐費 + 交通換過的話寫清楚每一段 + 自己打的字 */
-function remarkOf(d){
-  const parts=[...(d.meals||[])];
-  const ev=d.events||[];if(ev.length>1&&new Set(ev.map(e=>e.transport)).size>1)parts.push("交通："+ev.map(e=>`${e.name} ${tLabel(e.transport)}`).join(" → "));
-  if(d.note&&d.note.trim())parts.push(d.note.trim());
-  return parts.join("；");
-}
-function mealPills(d){return`<div class="quick" style="justify-content:flex-start">${MEALS.map(m=>`<button type="button" class="pill${(d.meals||[]).includes(m)?" on":""}" data-meal="${esc(m)}">${esc(m)}</button>`).join("")}</div>`}
-const remarkHint=()=>ENTRY.remark?"":`<p class="qhint" style="margin:0;font-size:13px">表單目前沒有備註欄，備註會接在活動名稱後面的括號裡。</p>`;
 
 /* ===== 精靈 ===== */
 const FLOWS={setup:["email","name"],edit:["startTime"],out:["events","legs","review"],outfix:["endTime","events","legs","review"],manual:["manual"]};
@@ -322,11 +311,11 @@ function newWiz(flow,data={},steps){return{flow,steps:steps||FLOWS[flow],i:0,dat
 function punchIn(){const f=floor5(new Date());shift={startDate:f.date,startTime:f.time};save();buzz();toast(`已上班打卡 ${f.time}`);render()}
 function outData(end){
   const pre=shift.event?[{name:shift.event,transport:shift.transport||profile.transport||"",auto:false}]:[];
-  return{startDate:shift.startDate,startTime:shift.startTime,endDate:end?end.date:shift.startDate,endTime:end?end.time:"",breakStart:shift.breakStart||"",breakEnd:shift.breakEnd||"",events:pre,meals:[],note:""};
+  return{startDate:shift.startDate,startTime:shift.startTime,endDate:end?end.date:shift.startDate,endTime:end?end.time:"",breakStart:shift.breakStart||"",breakEnd:shift.breakEnd||"",events:pre};
 }
 function startOut(){S.wiz=newWiz("out",outData(floor5(new Date())));buzz();S.dir="";render()}
 function startOutFix(){S.wiz=newWiz("out",outData(null),FLOWS.outfix);S.dir="";render()}
-function startManual(){const t=today();S.wiz=newWiz("manual",{events:[],trs:profile.transport?[profile.transport]:[],meals:[],note:"",raw:{ev:"",sd:mmdd(t),st:"",et:"",b1:"",b2:""}});S.dir="";render()}
+function startManual(){const t=today();S.wiz=newWiz("manual",{events:[],trs:profile.transport?[profile.transport]:[],raw:{ev:"",sd:mmdd(t),st:"",et:"",b1:"",b2:""}});S.dir="";render()}
 function stepKey(){const w=S.wiz;return w.editOnly||w.steps[w.i]}
 function next(){
   const w=S.wiz;S.dir="";w.err="";
@@ -345,7 +334,7 @@ function submitForm(){
   const w=S.wiz,d=w.data;
   const events=d.events.map(e=>({name:e.name,transport:e.transport}));
   const trs=w.flow==="manual"?[...d.trs]:[...new Set(events.map(e=>e.transport).filter(Boolean))];
-  const rec={id:rid(),event:events.map(e=>e.name).join("、"),events,startDate:d.startDate,startTime:d.startTime,breakStart:d.breakStart||"",breakEnd:d.breakEnd||"",endDate:d.endDate,endTime:d.endTime,transport:trs,remark:remarkOf(w.flow==="manual"?{meals:d.meals,note:d.note}:d),openedAt:new Date().toISOString(),status:"pending"};
+  const rec={id:rid(),event:events.map(e=>e.name).join("、"),events,startDate:d.startDate,startTime:d.startTime,breakStart:d.breakStart||"",breakEnd:d.breakEnd||"",endDate:d.endDate,endTime:d.endTime,transport:trs,openedAt:new Date().toISOString(),status:"pending"};
   if(w.flow==="out"&&shift)rec.prevShift=shift;
   history.push(rec);if(trs[0]&&TRANSPORT.includes(trs[0]))profile.transport=trs[0];
   if(w.flow==="out")shift=null;
@@ -404,13 +393,12 @@ const STEP={
     <div class="or">有休息</div>
     <div class="breakrow"><input class="field" id="b1" inputmode="numeric" placeholder="開始" value="${esc(d.breakStart||"")}" aria-label="休息開始"><span>到</span><input class="field" id="b2" inputmode="numeric" placeholder="結束" value="${esc(d.breakEnd||"")}" aria-label="休息結束"></div>
     <p class="err" id="err"></p><div class="spacer"></div><button type="button" class="cta" data-ok="break">確定</button>`,
-  /* 下班最後一步：確認＋備註 */
+  /* 下班最後一步：確認 */
   review:d=>{
     const hrs=shiftHours(d),noEnd=!d.endTime;
     const same=new Set(d.events.map(e=>e.transport)).size<=1;
     const tv=d.events.length?(same?esc(tLabel(d.events[0].transport)):d.events.map(e=>`${esc(e.name)}：${esc(tLabel(e.transport))}`).join("<br>")):"";
     const row=(label,val,step)=>`<button type="button" class="crow" data-jump="${step}"><span class="k">${label}</span><span class="v${val?"":" none"}">${val||"（沒有）"}</span>${IC.chev}</button>`;
-    const rm=remarkOf(d);
     return`<h2 class="q">確認一下</h2><p class="qhint">點任何一行可以修改。${hrs!=null?`這次共 <b class="num" style="font-size:18px">${fmtH(hrs)}</b>`:""}</p>
       <div class="card review">
         ${row("活動",esc(d.events.map(e=>e.name).join("、")),"events")}
@@ -419,10 +407,6 @@ const STEP={
         ${row("下班",noEnd?"":`<span class="num" style="font-size:19px">${md(d.endDate)}　${d.endTime}</span>`,"endTime")}
         ${row("交通",tv,"legs")}
       </div>
-      <div class="sech">備註</div>
-      ${mealPills(d)}
-      <input class="field" id="rnote" style="font-size:16px;padding:12px 14px" placeholder="其他備註（選填）" value="${esc(d.note||"")}" autocomplete="off">
-      <p class="qhint" id="rprev" style="margin:0">${rm?`表單備註：${esc(rm)}`:""}</p>${remarkHint()}
       ${!entryReady()?`<div class="warn">表單欄位還沒設定完成，送出後會存到「紀錄」，可以逐項複製貼到表單。</div>`:""}
       <div class="spacer"></div><button type="button" class="cta" data-submit>打開表單，按提交就完成</button>`;
   },
@@ -443,9 +427,6 @@ const STEP={
       </div>
       <div class="sech">交通（可以複選）</div>
       <div class="quick" style="justify-content:flex-start">${TRANSPORT.map(t=>`<button type="button" class="pill${d.trs.includes(t)?" on":""}" data-mtr="${esc(t)}">${TRANSPORT_LABEL[t][0]}</button>`).join("")}</div>
-      <div class="sech">備註</div>
-      ${mealPills(d)}
-      <input class="field" id="rnote" style="font-size:16px;padding:12px 14px" placeholder="其他備註（選填）" value="${esc(d.note||"")}" autocomplete="off">${remarkHint()}
       <div class="total"><span id="msum">${manualSum(d)}</span></div>
       <p class="err" id="err"></p>
       <div class="spacer"></div><button type="button" class="cta" data-msubmit>打開表單，按提交就完成</button>`;
@@ -495,8 +476,6 @@ function afterRender(){
   if(numeric)f.oninput=()=>{const s=f.value.replace(/[^\d]/g,"").slice(0,4);f.value=colonize(s);setErr(s.length===4&&!normTime(s)?"沒有這個時間，請重新輸入。":"")};
   for(const id of["b1","b2"]){const el=$(id);if(el)el.oninput=()=>{const s=el.value.replace(/[^\d]/g,"").slice(0,4);el.value=colonize(s);const nb=document.querySelector("[data-nobreak]");if(nb&&el.value)nb.classList.remove("on");if(s.length===4&&id==="b1")$("b2").focus()}}
   if(f)f.onkeydown=e=>{if(e.key!=="Enter")return;e.preventDefault();if(stepKey()==="events"){document.querySelector("[data-addev]").click();return}const ok=document.querySelector("[data-ok]");ok&&ok.click()};
-  /* 備註輸入：只更新預覽，不重畫 */
-  const rn=$("rnote");if(rn&&S.wiz)rn.oninput=()=>{S.wiz.data.note=rn.value;const pv=$("rprev");if(pv){const t=remarkOf(S.wiz.data);pv.textContent=t?"表單備註："+t:""}};
   /* 交通「其他方式」 */
   document.querySelectorAll("[data-legother]").forEach(el=>{el.oninput=()=>{const d=S.wiz.data,i=+el.dataset.legother,v=el.value.trim();if(!v)return;d.events[i].transport=v;d.events[i].auto=false;document.querySelectorAll(`[data-leg="${i}"]`).forEach(x=>x.classList.remove("on"));setErr("")}});
   /* 補登頁：打字時只更新時數，不重畫整頁 */
@@ -515,7 +494,6 @@ document.addEventListener("click",e=>{
   if(t.closest("[data-addev]")){const f=$("f"),d=S.wiz.data;if(!f.value.trim()){setErr("先輸入活動名稱。");f.focus();return}if(!addEvent(d,f.value)){setErr("這個活動已經選了。");return}render();return}
   /* 交通：改一個地點，後面還沒自己改過的地點跟著改 */
   const lg=t.closest("[data-leg]");if(lg){const d=S.wiz.data,i=+lg.dataset.leg;d.events[i].transport=lg.dataset.v;d.events[i].auto=false;for(let j=i+1;j<d.events.length&&d.events[j].auto;j++)d.events[j].transport=lg.dataset.v;buzz();render();return}
-  const ml=t.closest("[data-meal]");if(ml){const d=S.wiz.data,m=ml.dataset.meal;d.meals=d.meals.includes(m)?d.meals.filter(x=>x!==m):[...d.meals,m];buzz();render();return}
   const nb=t.closest("[data-nobreak]");if(nb){S.wiz.data.breakStart="";S.wiz.data.breakEnd="";$("b1").value="";$("b2").value="";nb.classList.add("on");buzz();setErr("");return}
   const sn=t.closest("[data-setnow]");if(sn){$("f").value=floor5(new Date()).time;setErr("");return}
   const adj=t.closest("[data-adj]");if(adj){const f=$("f"),cur=normTime(f.value)||floor5(new Date()).time;let[h,m]=cur.split(":").map(Number);let tot=(h*60+m+(+adj.dataset.adj)+1440)%1440;f.value=`${pad(Math.floor(tot/60))}:${pad(tot%60)}`;setErr("");return}
@@ -644,8 +622,8 @@ function viewHist(){
   return`<div class="screen fade"><h1 class="lt1">紀錄</h1>
     <div class="quick" style="justify-content:flex-start">${months.slice(0,6).map(m=>`<button type="button" class="pill" data-month="${m}" style="${m===key?"border-color:var(--in);color:var(--in);font-weight:700":""}">${+m.slice(5)} 月</button>`).join("")}</div>
     <div class="total"><span>${+key.slice(5)} 月共 ${list.length} 次</span><b>${fmtH(total)}</b></div>
-    ${list.length?`<div class="card">${list.map(h=>`<div class="ev" style="flex-wrap:wrap"><span class="d">${mmdd(h.startDate).replace(/^(\d\d)(\d\d)$/,(_,a,b)=>`${+a}/${+b}`)}<small>週${WD[parseYmd(h.startDate).getDay()]}</small></span><span class="n">${esc(h.event)}<small class="num" style="font-size:15px">${h.startTime} – ${h.endTime}${h.endDate!==h.startDate?"（隔天）":""} · ${fmtH(shiftHours(h))}${h.status==="pending"?` · <span style="color:var(--in)">還沒確認送出</span>`:""}</small>${h.remark?`<small>備註：${esc(h.remark)}</small>`:""}</span><button type="button" class="x" data-reopen="${h.id}">${entryReady()?"再開表單":"複製"}</button><button type="button" class="x" data-delhist="${h.id}">刪除</button>
-      ${S.copy===h.id?`<div style="flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;padding-top:8px">${[["Email",profile.email],["活動",h.event+(h.remark&&!ENTRY.remark?`（${h.remark}）`:"")],["姓名",profile.name],["上班日期",mmdd(h.startDate)],["上班時間",h.startTime],["休息開始",h.breakStart],["休息結束",h.breakEnd],["下班日期",mmdd(h.endDate)],["下班時間",h.endTime],["交通",toArr(h.transport).join("、")],["備註",h.remark]].filter(x=>x[1]).map(([l,v])=>`<button type="button" class="pill" data-copy="${esc(v)}">${l}：${esc(v)}</button>`).join("")}</div>`:""}</div>`).join("")}</div>`:`<div class="empty">這個月還沒有打卡紀錄。</div>`}
+    ${list.length?`<div class="card">${list.map(h=>`<div class="ev" style="flex-wrap:wrap"><span class="d">${mmdd(h.startDate).replace(/^(\d\d)(\d\d)$/,(_,a,b)=>`${+a}/${+b}`)}<small>週${WD[parseYmd(h.startDate).getDay()]}</small></span><span class="n">${esc(h.event)}<small class="num" style="font-size:15px">${h.startTime} – ${h.endTime}${h.endDate!==h.startDate?"（隔天）":""} · ${fmtH(shiftHours(h))}${h.status==="pending"?` · <span style="color:var(--in)">還沒確認送出</span>`:""}</small></span><button type="button" class="x" data-reopen="${h.id}">${entryReady()?"再開表單":"複製"}</button><button type="button" class="x" data-delhist="${h.id}">刪除</button>
+      ${S.copy===h.id?`<div style="flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px;padding-top:8px">${[["Email",profile.email],["活動",h.event],["姓名",profile.name],["上班日期",mmdd(h.startDate)],["上班時間",h.startTime],["休息開始",h.breakStart],["休息結束",h.breakEnd],["下班日期",mmdd(h.endDate)],["下班時間",h.endTime],["交通",toArr(h.transport).join("、")]].filter(x=>x[1]).map(([l,v])=>`<button type="button" class="pill" data-copy="${esc(v)}">${l}：${esc(v)}</button>`).join("")}</div>`:""}</div>`).join("")}</div>`:`<div class="empty">這個月還沒有打卡紀錄。</div>`}
     <p class="qhint" style="margin:0">紀錄只存在這支手機上。「再開表單」會重新打開填好的表單，不會重複送出，除非你再按一次提交。</p></div>`;
 }
 document.addEventListener("click",e=>{const m=e.target.closest("[data-month]");if(m){S.month=m.dataset.month;render()}});
