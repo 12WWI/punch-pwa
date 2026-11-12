@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="zh-Hant" class="v2">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -14,7 +14,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&display=swap">
-<script>try{if(localStorage.getItem("punch.look")==="v2")document.documentElement.classList.add("v2")}catch(_){}</script>
+<script>try{const t=localStorage.getItem("punch.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(_){}</script>
 <style>
 /* Layout: one-screen app. Home = giant punch button (orange = 上班, blue = 下班); wizards show one question per screen and auto-advance. Look matches 器材調度板: road-case greys + gaffer-tape label. */
 :root{
@@ -27,12 +27,18 @@
   --f-body:system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
   color-scheme:light;
 }
-@media (prefers-color-scheme: dark){:root{
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0F1113; --surface:#1A1D20; --surface2:#23272B; --ink:#ECEEF0; --muted:#9AA2AB; --line:#2D3237;
   --in:#E8913E; --in-soft:#3A2814; --out:#6EA8E6; --out-soft:#152638; --on:#0F1113;
   --ok:#55B983; --ok-soft:#163124; --bad:#F06A57;
   --glass:rgba(22,24,27,.9); --shadow:0 1px 2px rgba(0,0,0,.4); color-scheme:dark;
 }}
+:root[data-theme="dark"]{
+  --bg:#0F1113; --surface:#1A1D20; --surface2:#23272B; --ink:#ECEEF0; --muted:#9AA2AB; --line:#2D3237;
+  --in:#E8913E; --in-soft:#3A2814; --out:#6EA8E6; --out-soft:#152638; --on:#0F1113;
+  --ok:#55B983; --ok-soft:#163124; --bad:#F06A57;
+  --glass:rgba(22,24,27,.9); --shadow:0 1px 2px rgba(0,0,0,.4); color-scheme:dark;
+}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html,body{height:100%;margin:0;overflow-x:hidden}
@@ -161,9 +167,10 @@ textarea.field{font-size:15px;line-height:1.5;padding:12px 14px;resize:vertical}
 .promptbox{white-space:pre-wrap;font-size:13px;background:var(--surface2);border-radius:12px;padding:12px;-webkit-user-select:text;user-select:text}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(100px + env(safe-area-inset-bottom,0px));z-index:9;background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:999px;font-size:15px;max-width:calc(100% - 40px);text-align:center}
 
-/* ===== 新版外觀（試用）：設定頁打開才套用 ===== */
+/* ===== 外觀（html.v2）：四層灰階、圓角統一、警告框柔和 ===== */
 html.v2{--bg:#F2F3F5;--surface:#FFFFFF;--surface2:#F5F6F8;--line:#E6E8EC;--muted:#6B737C;--in-soft:#FBF1E6}
-@media (prefers-color-scheme: dark){html.v2{--bg:#0B0C0E;--surface:#17191C;--surface2:#202327;--line:#25282C;--muted:#8D95A0;--ink:#F3F4F6;--in-soft:#221D18}}
+@media (prefers-color-scheme: dark){html.v2:not([data-theme="light"]){--bg:#0B0C0E;--surface:#17191C;--surface2:#202327;--line:#25282C;--muted:#8D95A0;--ink:#F3F4F6;--in-soft:#221D18}}
+html.v2[data-theme="dark"]{--bg:#0B0C0E;--surface:#17191C;--surface2:#202327;--line:#25282C;--muted:#8D95A0;--ink:#F3F4F6;--in-soft:#221D18}
 html.v2 .punch{width:min(66vw,258px);gap:10px;box-shadow:0 12px 32px rgba(0,0,0,.2),inset 0 -5px 0 rgba(0,0,0,.12)}
 html.v2 .punch b{font-size:58px;font-weight:600}
 html.v2 .punch small{font-size:13px;opacity:.8}
@@ -212,7 +219,10 @@ let profile=DB.get("profile",{email:"",name:"",transport:""});
 let cal=DB.get("cal",[]);            // [{id,date,end,name,time,src}]
 let shift=DB.get("shift",null);      // 上班中的紀錄
 let history=DB.get("history",[]);    // 送出過的紀錄
-const save=()=>{DB.set("profile",profile);DB.set("cal",cal);DB.set("shift",shift);DB.set("history",history)};
+const who=()=>(profile.nick||profile.name||"").trim()||"我";
+let trash=DB.get("trash",[]);       // 刪掉的東西：[{id,kind,item,by,at}]
+function toTrash(kind,item){trash.unshift({id:rid(),kind,item,by:who(),at:new Date().toISOString()});if(trash.length>200)trash.length=200}
+const save=()=>{DB.set("trash",trash);DB.set("profile",profile);DB.set("cal",cal);DB.set("shift",shift);DB.set("history",history)};
 /* 已經過去的行程不留 */
 {const t=(d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`)(new Date());const n=cal.length;cal=cal.filter(e=>(e.end||e.date)>=t);if(cal.length!==n)DB.set("cal",cal)}
 
@@ -292,7 +302,7 @@ if(S.imp)S.tab="cal";
 const saveImp=()=>DB.set("imp",S.imp);
 /* 只有換到不同畫面才播滑入動畫；同一個畫面裡點選項只更新內容，不晃 */
 let lastScreen="";
-function screenKey(){const w=S.wiz,im=S.imp;return JSON.stringify([!!S.iosGuide,entryReady(),S.tab,w?[w.flow,w.i,w.editOnly||""]:0,im?im.step||1:0])}
+function screenKey(){const w=S.wiz,im=S.imp;return JSON.stringify([!!S.iosGuide,entryReady(),S.tab,S.sub||"",w?[w.flow,w.i,w.editOnly||""]:0,im?im.step||1:0])}
 function calmRender(){renderScreen();const k=screenKey();if(k===lastScreen){const f=$("app").querySelector(".fade");if(f)f.classList.remove("fade","back")}lastScreen=k}
 function render(){calmRender()}
 function renderScreen(){
@@ -307,7 +317,7 @@ function renderScreen(){
   renderTabs();afterRender();
 }
 function renderTabs(){$("tabs").innerHTML=[["home","打卡",IC.clock],["cal","行事曆",IC.cal],["hist","紀錄",IC.list],["set","設定",IC.gear]].map(([k,l,i])=>`<button type="button" data-tab="${k}" aria-current="${S.tab===k?"page":"false"}">${i}${l}</button>`).join("")}
-$("tabs").addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(!b)return;S.tab=b.dataset.tab;S.dir="";render();window.scrollTo(0,0)});
+$("tabs").addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(!b)return;S.tab=b.dataset.tab;S.sub="";S.dir="";render();window.scrollTo(0,0)});
 
 /* ===== 首頁 ===== */
 function viewHome(){
@@ -344,7 +354,7 @@ function pendCard(){
 
 
 /* ===== 精靈 ===== */
-const FLOWS={setup:["email","name"],edit:["startTime"],out:["events","legs","review"],outfix:["endTime","events","legs","review"],manual:["manual"]};
+const FLOWS={setup:["email","name","nick"],nick:["nick"],edit:["startTime"],out:["events","legs","review"],outfix:["endTime","events","legs","review"],manual:["manual"]};
 function newWiz(flow,data={},steps){return{flow,steps:steps||FLOWS[flow],i:0,data,editOnly:null,err:""}}
 /* 上班：按一下就記時間，不用選任何東西 */
 function punchIn(){const f=floor5(new Date());shift={startDate:f.date,startTime:f.time};save();buzz();toast(`已上班打卡 ${f.time}`);render()}
@@ -365,7 +375,8 @@ function next(){
 function back(){const w=S.wiz;S.dir="back";w.err="";if(w.editOnly){w.editOnly=null;if(w.returnTo==="home"){S.wiz=null}render();return}if(w.i>0){w.i--;render();return}if(w.flow==="setup"&&!(profile.email&&profile.name))return;S.wiz=null;render()}
 function finish(){
   const w=S.wiz,d=w.data;
-  if(w.flow==="setup"){profile.email=d.email;profile.name=d.name;save();S.wiz=null;toast("設定好了，之後不用再填");render();return}
+  if(w.flow==="setup"){profile.email=d.email;profile.name=d.name;profile.nick=d.nick||"";save();S.wiz=null;toast("設定好了，之後不用再填");render();return}
+  if(w.flow==="nick"){profile.nick=d.nick||"";save();S.wiz=null;S.tab="set";toast("暱稱已更新");render();return}
 }
 function finishEdit(){const d=S.wiz.data;shift={...shift,startDate:d.startDate,startTime:d.startTime};save();S.wiz=null;toast("已更新");render()}
 function editShift(){S.wiz=newWiz("edit",{...shift});S.wiz.editOnly="startTime";S.wiz.returnTo="home";render()}
@@ -408,9 +419,12 @@ const STEP={
   email:d=>`<h2 class="q">你的 Email</h2><p class="qhint">打卡表單要填的信箱，只需要設定一次。</p>
     <input class="field" id="f" type="email" inputmode="email" autocomplete="email" enterkeyhint="next" placeholder="name@example.com" value="${esc(d.email||profile.email)}">
     <p class="err" id="err"></p><div class="spacer"></div><button type="button" class="cta" data-ok="email">下一步</button>`,
-  name:d=>`<h2 class="q">你的名字</h2><p class="qhint">填表單上的姓名，之後會自動帶入。</p>
+  name:d=>`<h2 class="q">你的名字</h2><p class="qhint">請填真名，表單上要用。之後會自動帶入。</p>
     <input class="field" id="f" autocomplete="name" enterkeyhint="done" placeholder="你的姓名" value="${esc(d.name||profile.name)}">
-    <p class="err" id="err"></p><div class="spacer"></div><button type="button" class="cta" data-ok="name">完成</button>`,
+    <p class="err" id="err"></p><div class="spacer"></div><button type="button" class="cta" data-ok="name">${S.wiz&&S.wiz.editOnly?"確定":"下一步"}</button>`,
+  nick:d=>`<h2 class="q">你的暱稱</h2><p class="qhint">只在 App 裡顯示，例如誰加了哪個行程、誰刪了什麼。表單還是用真名。不填就顯示姓名。</p>
+    <input class="field" id="f" autocomplete="nickname" enterkeyhint="done" placeholder="可以空白" value="${esc(d.nick!=null?d.nick:(profile.nick||""))}">
+    <p class="err" id="err"></p><div class="spacer"></div><button type="button" class="cta" data-ok="nick">完成</button>`,
   /* 下班第 1 步：依序點今天去的活動（可以多個） */
   events:(d,w)=>{
     const opts=outOptions(d),order=d.events.map(e=>e.name);
@@ -502,6 +516,7 @@ function commit(key){
   const d=S.wiz.data,f=$("f");
   if(key==="email"){const v=f.value.trim();if(!/^\S+@\S+\.\S+$/.test(v))return setErr("請輸入正確的 Email。");d.email=v;return next()}
   if(key==="name"){const v=f.value.trim();if(!v)return setErr("請輸入名字。");d.name=v;return next()}
+  if(key==="nick"){d.nick=f.value.trim().slice(0,12);return next()}
   if(key==="events"){if(f&&f.value.trim())addEvent(d,f.value);if(!d.events.length)return setErr("請至少選一個活動，或輸入名稱。");fillLegs(d);return next()}
   if(key==="legs"){const miss=d.events.findIndex(e=>!e.transport);if(miss>=0)return setErr(`「${d.events[miss].name}」還沒選交通方式。`);return next()}
   if(key==="startTime"){const v=normTime(f.value);if(!v)return setErr("時間格式是 4 碼，例如 0830。");d.startDate=fitStartDate(d,v);d.startTime=v;return next()}
@@ -556,13 +571,17 @@ document.addEventListener("click",e=>{
   const cs=t.closest("[data-cancelshift]");if(cs){if(!cs.dataset.armed){cs.dataset.armed=1;cs.textContent="再按一次確定取消（紀錄會刪掉）";setTimeout(()=>{if(cs.isConnected){delete cs.dataset.armed;cs.textContent="取消這次上班打卡"}},3500);return}shift=null;save();toast("已取消上班打卡");render();return}
   /* 行事曆 / 紀錄 / 設定 */
   if(t.closest("[data-addcal]")){addCal();return}
-  const dc=t.closest("[data-delcal]");if(dc){if(!dc.dataset.armed){dc.dataset.armed=1;dc.textContent="確定刪除？";dc.classList.add("armed");setTimeout(()=>{if(dc.isConnected){delete dc.dataset.armed;dc.textContent="刪除";dc.classList.remove("armed")}},3000);return}cal=cal.filter(x=>x.id!==dc.dataset.delcal);save();render();return}
+  const dc=t.closest("[data-delcal]");if(dc){if(!dc.dataset.armed){dc.dataset.armed=1;dc.textContent="確定刪除？";dc.classList.add("armed");setTimeout(()=>{if(dc.isConnected){delete dc.dataset.armed;dc.textContent="刪除";dc.classList.remove("armed")}},3000);return}const it=cal.find(x=>x.id===dc.dataset.delcal);if(it)toTrash("cal",it);cal=cal.filter(x=>x.id!==dc.dataset.delcal);save();toast("已移到垃圾桶");render();return}
   const ro=t.closest("[data-reopen]");if(ro){const r=history.find(x=>x.id===ro.dataset.reopen);if(r){if(entryReady())window.open(formUrl(r),"_blank");else{S.copy=S.copy===r.id?null:r.id;render()}}return}
-  const dh=t.closest("[data-delhist]");if(dh){if(!dh.dataset.armed){dh.dataset.armed=1;dh.textContent="確定刪除？";dh.classList.add("armed");setTimeout(()=>{if(dh.isConnected){delete dh.dataset.armed;dh.textContent="刪除";dh.classList.remove("armed")}},3000);return}history=history.filter(x=>x.id!==dh.dataset.delhist);save();render();return}
+  const dh=t.closest("[data-delhist]");if(dh){if(!dh.dataset.armed){dh.dataset.armed=1;dh.textContent="確定刪除？";dh.classList.add("armed");setTimeout(()=>{if(dh.isConnected){delete dh.dataset.armed;dh.textContent="刪除";dh.classList.remove("armed")}},3000);return}const it=history.find(x=>x.id===dh.dataset.delhist);if(it)toTrash("hist",it);history=history.filter(x=>x.id!==dh.dataset.delhist);save();toast("已移到垃圾桶");render();return}
   const cp=t.closest("[data-copy]");if(cp){const v=cp.dataset.copy;(navigator.clipboard?navigator.clipboard.writeText(v):Promise.reject()).then(()=>toast("已複製："+v)).catch(()=>toast(v));return}
-  const sp=t.closest("[data-setp]");if(sp){S.wiz=newWiz("setup",{...profile});S.wiz.i=sp.dataset.setp==="name"?1:0;render();return}
+  const sp=t.closest("[data-setp]");if(sp){const k=sp.dataset.setp;if(k==="nick"){S.wiz=newWiz("nick",{nick:profile.nick||""});render();return}S.wiz=newWiz("setup",{...profile});S.wiz.i=k==="name"?1:0;render();return}
   const st=t.closest("[data-settrans]");if(st){profile.transport=st.dataset.settrans;save();toast("已設定預設交通方式");render();return}
-  if(t.closest("[data-look]")){const on=document.documentElement.classList.toggle("v2");try{localStorage.setItem("punch.look",on?"v2":"")}catch(_){}toast(on?"已換成新版外觀":"已換回原本外觀");render();return}
+  const th=t.closest("[data-theme-set]");if(th){setTheme(th.dataset.themeSet);render();return}
+  if(t.closest("[data-trash]")){S.sub="trash";render();window.scrollTo(0,0);return}
+  if(t.closest("[data-trashback]")){S.sub="";render();return}
+  const rs=t.closest("[data-restore]");if(rs){const x=trash.find(y=>y.id===rs.dataset.restore);if(x){if(x.kind==="cal"){if(!cal.some(e=>e.id===x.item.id))cal.push(x.item)}else if(!history.some(h=>h.id===x.item.id)){history.push(x.item);history.sort((a,b)=>(a.startDate+a.startTime).localeCompare(b.startDate+b.startTime))}trash=trash.filter(y=>y!==x);save();toast("已還原");render()}return}
+  if(t.closest("[data-emptytrash]")){if(!confirm("清空以後就救不回來了，確定嗎？"))return;trash=[];save();toast("垃圾桶清空了");render();return}
   if(t.closest("[data-export]")){const blob=new Blob([JSON.stringify({profile,cal,history},null,1)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="打卡備份.json";a.click();return}
 });
 
@@ -570,7 +589,7 @@ document.addEventListener("click",e=>{
 function viewCal(){
   if(S.imp)return viewImport();
   const t=today(),up=cal.filter(e=>(e.end||e.date)>=t&&!punched(e.name,e.end||e.date)).sort((a,b)=>a.date.localeCompare(b.date)||(a.time||"").localeCompare(b.time||""));
-  const row=e=>{const d=parseYmd(e.date),live=e.date<=t;return`<div class="ev"><span class="d">${d.getMonth()+1}/${d.getDate()}<small>週${WD[d.getDay()]}</small></span><span class="n">${esc(e.name)}<small>${[e.end&&e.end!==e.date?`到 ${nice(e.end)}`:"",e.time||"",live&&punched(e.name,t)?"今天已打卡":""].filter(Boolean).join(" · ")}</small></span><button type="button" class="x" data-delcal="${e.id}">刪除</button></div>`};
+  const row=e=>{const d=parseYmd(e.date),live=e.date<=t;return`<div class="ev"><span class="d">${d.getMonth()+1}/${d.getDate()}<small>週${WD[d.getDay()]}</small></span><span class="n">${esc(e.name)}<small>${[e.end&&e.end!==e.date?`到 ${nice(e.end)}`:"",e.time||"",live&&punched(e.name,t)?"今天已打卡":"",e.by?`${esc(e.by)} 加入`:""].filter(Boolean).join(" · ")}</small></span><button type="button" class="x" data-delcal="${e.id}">刪除</button></div>`};
   return`<div class="screen fade"><h1 class="lt1">行事曆</h1>
     <div class="addbox"><div class="row"><label for="cName">活動</label><input id="cName" placeholder="活動名稱" enterkeyhint="done" autocomplete="off"></div>
       <div class="row"><label for="cDate">日期</label><input id="cDate" type="date" value="${t}"></div>
@@ -584,7 +603,7 @@ function viewCal(){
 function addCal(){
   const n=$("cName").value.trim(),d=$("cDate").value,e=$("cEnd").value;
   if(!n){toast("請輸入活動名稱");$("cName").focus();return}if(!d){toast("請選日期");return}
-  cal.push({id:rid(),name:n,date:d,end:e&&e>d?e:""});save();toast(`已加入 ${nice(d)} ${n}`);render();
+  cal.push({id:rid(),name:n,date:d,end:e&&e>d?e:"",by:who(),at:new Date().toISOString()});save();toast(`已加入 ${nice(d)} ${n}`);render();
 }
 
 /* ===== 從截圖匯入：提示詞交給自己的 AI App，結果貼回來 ===== */
@@ -625,7 +644,7 @@ function parseCal(txt){
 function applyImport(list){
   const lo=list.reduce((a,e)=>e.date<a?e.date:a,"9999-99-99"),hi=list.reduce((a,e)=>(e.end||e.date)>a?(e.end||e.date):a,"");
   cal=cal.filter(e=>!(e.src==="img"&&e.date>=lo&&e.date<=hi));
-  let n=0;for(const e of list){if(cal.some(x=>x.name===e.name&&x.date===e.date))continue;cal.push({id:rid(),...e,src:"img"});n++}
+  let n=0;for(const e of list){if(cal.some(x=>x.name===e.name&&x.date===e.date))continue;cal.push({id:rid(),...e,src:"img",by:who(),at:new Date().toISOString()});n++}
   save();return n;
 }
 function viewImport(){
@@ -672,17 +691,30 @@ function viewHist(){
 document.addEventListener("click",e=>{const m=e.target.closest("[data-month]");if(m){S.month=m.dataset.month;render()}});
 
 /* ===== 設定 ===== */
+const themePref=()=>{try{const t=localStorage.getItem("punch.theme");return t==="light"||t==="dark"?t:"auto"}catch(_){return"auto"}};
+function setTheme(k){try{localStorage.setItem("punch.theme",k)}catch(_){}if(k==="auto")delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=k}
+function trashLine(x){const i=x.item||{};if(x.kind==="cal")return{what:"行程",title:i.name||"",sub:nice(i.date)+(i.end&&i.end!==i.date?` 到 ${nice(i.end)}`:"")+(i.by?` · ${i.by} 加入`:"")};return{what:"打卡紀錄",title:i.event||"",sub:`${nice(i.startDate)} ${i.startTime||""}–${i.endTime||""}`}}
+function viewTrash(){
+  const at=x=>{const d=new Date(x.at);return`${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`};
+  return`<div class="screen fade"><div class="wtop"><button type="button" class="back" data-trashback>${IC.back}設定</button><span></span><span class="skip"></span></div><h1 class="lt1" style="margin-top:6px">垃圾桶</h1>
+    <p class="qhint" style="margin:0">刪掉的行程和打卡紀錄會先放在這裡，按「還原」就放回去。這裡只跟 App 有關，不會動到表單。</p>
+    ${trash.length?`<div class="card">${trash.map(x=>{const l=trashLine(x);return`<div class="ev"><span class="n">${esc(l.title)}<small>${l.what} · ${esc(l.sub)}</small><small>${esc(x.by||"")} 在 ${at(x)} 刪除</small></span><button type="button" class="x" data-restore="${x.id}">還原</button></div>`}).join("")}</div>
+    <button type="button" class="cta ghost" data-emptytrash>清空垃圾桶</button>`:`<div class="empty">垃圾桶是空的。</div>`}</div>`;
+}
 function viewSettings(){
+  if(S.sub==="trash")return viewTrash();
   const ready=entryReady();
   return`<div class="screen fade"><h1 class="lt1">設定</h1>
-    <div class="card"><button type="button" class="crow" data-setp="name"><span class="k">姓名</span><span class="v">${esc(profile.name)}</span>${IC.chev}</button><button type="button" class="crow" data-setp="email"><span class="k">Email</span><span class="v">${esc(profile.email)}</span>${IC.chev}</button></div>
+    <div class="card"><button type="button" class="crow" data-setp="name"><span class="k">姓名</span><span class="v">${esc(profile.name)}</span>${IC.chev}</button><button type="button" class="crow" data-setp="nick"><span class="k">暱稱</span><span class="v${profile.nick?"":" none"}">${esc(profile.nick||"（沒有，顯示姓名）")}</span>${IC.chev}</button><button type="button" class="crow" data-setp="email"><span class="k">Email</span><span class="v">${esc(profile.email)}</span>${IC.chev}</button></div>
     <div class="sech">預設交通方式</div>
     <div class="card">${TRANSPORT.map(t=>`<button type="button" class="crow" data-settrans="${esc(t)}"><span class="v">${TRANSPORT_LABEL[t][0]}</span>${profile.transport===t?'<span style="color:var(--in);font-weight:700">✓</span>':""}</button>`).join("")}</div>
     <div class="sech">表單</div>
     <div class="card"><div class="crow"><span class="v">${ready?"表單已設定，送出時會自動填好":"表單還沒設定"}</span><span style="color:${ready?"var(--ok)":"var(--bad)"};font-weight:700">${ready?"✓":"!"}</span></div>${ready?`<button type="button" class="crow" data-sharecode><span class="v">分享設定連結給同事</span>${IC.chev}</button>`:""}<button type="button" class="crow" data-resetcode><span class="v">重新輸入設定碼</span>${IC.chev}</button></div>
     ${ready?'<p class="qhint" style="margin:-6px 0 14px">同事點連結就設定好，不用貼設定碼。連結裡有表單代碼，請私訊傳，不要貼到公開的地方。</p>':""}
-    <div class="sech">外觀</div>
-    <div class="card"><button type="button" class="crow" data-look><span class="v">新版外觀（試用）</span><span style="color:var(--in);font-weight:700">${document.documentElement.classList.contains("v2")?"開":"關"}</span></button></div>
+    <div class="sech">深色／淺色</div>
+    <div class="card">${[["auto","跟手機設定一樣"],["light","淺色"],["dark","深色"]].map(([k,l])=>`<button type="button" class="crow" data-theme-set="${k}"><span class="v">${l}</span>${themePref()===k?'<span style="color:var(--in);font-weight:700">✓</span>':""}</button>`).join("")}</div>
+    <div class="sech">垃圾桶</div>
+    <div class="card"><button type="button" class="crow" data-trash><span class="v">刪掉的行程和紀錄</span><span class="v" style="flex:none;color:var(--muted)">${trash.length?trash.length+" 筆":"空的"}</span>${IC.chev}</button></div>
     <button type="button" class="cta ghost" data-export>下載備份（行事曆和紀錄）</button>
     <p class="qhint" style="margin:0">資料只存在這支手機的瀏覽器裡。換手機或清除瀏覽資料前，記得先下載備份。</p></div>`;
 }
