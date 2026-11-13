@@ -235,8 +235,8 @@ async function api(body){
 const typing=()=>{const a=document.activeElement;return!!a&&/^(INPUT|TEXTAREA)$/.test(a.tagName)};
 async function pull(){if(!shared()||syncBusy)return;syncBusy=true;try{await api({a:"list"})}catch(e){syncErr=e.message==="key"?"共用行事曆的密碼不對，請重新貼上設定碼":"沒連上共用行事曆，現在顯示的是上次的資料"}finally{syncBusy=false}if(!S.wiz&&!S.imp&&!typing())render()}
 async function push(body,okMsg){try{await api(body);if(okMsg)toast(okMsg)}catch(e){syncErr="沒連上共用行事曆";toast("沒連上網路，這個動作沒有存進共用行事曆，請稍後再試一次");try{await api({a:"list"})}catch(_){}}if(!S.wiz&&!S.imp)render()}
-/* 已經過去的行程不留 */
-{const t=(d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`)(new Date());const n=cal.length;cal=cal.filter(e=>(e.end||e.date)>=t);if(cal.length!==n)DB.set("cal",cal)}
+/* 結束超過 7 天的行程才清掉（跨夜下班、補登前幾天還要用到；行事曆頁只顯示今天以後的） */
+{const t=(d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`)(new Date(Date.now()-7*864e5));const n=cal.length;cal=cal.filter(e=>(e.end||e.date)>=t);if(cal.length!==n)DB.set("cal",cal)}
 
 /* ===== helpers ===== */
 const $=id=>document.getElementById(id);
@@ -479,16 +479,13 @@ const STEP={
   },
   /* 補登：一頁填完 */
   manual:d=>{
-    const r=d.raw,p=manualParse(d);
-    const evs=p.sd?eventsOn(p.sd):[],names=evs.map(e=>e.name).slice(0,8);
-    const days=[0,1,2].map(n=>ymd(new Date(Date.now()-n*864e5)));
-    const typed=r.ev.split("、").map(x=>x.trim());
+    const r=d.raw,c=manualChips(d);
     return`<h2 class="q">補登一筆</h2><p class="qhint">時間輸入 4 碼，例如 0830。下班比上班早就算隔天。</p>
       <div class="addbox">
         <div class="row"><label for="msd">日期</label><input id="msd" inputmode="numeric" maxlength="4" placeholder="月日 4 碼" value="${esc(r.sd)}" autocomplete="off"></div>
-        <div class="quick" style="justify-content:flex-start">${days.map((v,i)=>`<button type="button" class="pill${p.sd===v?" on":""}" data-msd="${v}">${["今天","昨天","前天"][i]} ${md(v)}</button>`).join("")}</div>
+        <div class="quick" id="mdays" style="justify-content:flex-start">${c.days}</div>
         <div class="row"><label for="mev">活動</label><input id="mev" placeholder="多個活動用「、」隔開" value="${esc(r.ev)}" autocomplete="off"></div>
-        ${names.length?`<div class="quick" style="justify-content:flex-start">${names.map(n=>`<button type="button" class="pill${typed.includes(n)?" on":""}" data-mev="${esc(n)}">${esc(n)}</button>`).join("")}</div>`:""}
+        <div class="quick" id="mnames" style="justify-content:flex-start"${c.names?"":" hidden"}>${c.names}</div>
         <div class="row"><label for="mst">上班</label><input id="mst" class="num" inputmode="numeric" maxlength="5" placeholder="0830" value="${esc(r.st)}"><label for="met" style="text-align:center">下班</label><input id="met" class="num" inputmode="numeric" maxlength="5" placeholder="1800" value="${esc(r.et)}"></div>
         <div class="row"><label for="mb1">休息</label><input id="mb1" class="num" inputmode="numeric" maxlength="5" placeholder="沒有就空白" value="${esc(r.b1)}"><span style="color:var(--muted)">到</span><input id="mb2" class="num" inputmode="numeric" maxlength="5" placeholder="" value="${esc(r.b2)}"></div>
       </div>
@@ -499,6 +496,15 @@ const STEP={
       <div class="spacer"></div><button type="button" class="cta" data-msubmit>打開表單，按提交就完成</button>`;
   },
 };
+/* 補登頁的日期快選和當天行事曆活動（改日期時只換這兩塊，不重畫整頁，才不會吃掉正在打的字） */
+function manualChips(d){
+  const p=manualParse(d),typed=d.raw.ev.split("、").map(x=>x.trim());
+  const days=[0,1,2].map(n=>ymd(new Date(Date.now()-n*864e5)));
+  const names=(p.sd?eventsOn(p.sd):[]).map(e=>e.name).slice(0,8);
+  return{days:days.map((v,i)=>`<button type="button" class="pill${p.sd===v?" on":""}" data-msd="${v}">${["今天","昨天","前天"][i]} ${md(v)}</button>`).join(""),
+    names:names.map(n=>`<button type="button" class="pill${typed.includes(n)?" on":""}" data-mev="${esc(n)}">${esc(n)}</button>`).join("")};
+}
+function refreshManualChips(d){const c=manualChips(d),a=$("mdays"),b=$("mnames");if(a)a.innerHTML=c.days;if(b){b.innerHTML=c.names;b.hidden=!c.names}}
 function manualParse(d){const r=d.raw,sd=mmddToYmd(r.sd,today()),st=normTime(r.st),et=normTime(r.et);let ed=null;if(sd&&st&&et)ed=et>=st?sd:ymd(new Date(parseYmd(sd).getTime()+864e5));return{sd,st,et,ed,b1:normTime(r.b1),b2:normTime(r.b2)}}
 function manualSum(d){const p=manualParse(d);if(!p.sd||!p.st||!p.et)return"填好日期和上下班時間，這裡會算時數";const h=shiftHours({startDate:p.sd,startTime:p.st,endDate:p.ed,endTime:p.et,breakStart:p.b1&&p.b2?p.b1:"",breakEnd:p.b1&&p.b2?p.b2:""});return`${nice(p.sd)} ${p.st} – ${p.ed!==p.sd?"隔天 ":""}${p.et} · 共 ${fmtH(h)}`}
 function manualSubmit(){
@@ -550,7 +556,7 @@ function afterRender(){
   /* 補登頁：打字時只更新時數，不重畫整頁 */
   if(S.wiz&&stepKey()==="manual"){
     const d=S.wiz.data,map={msd:"sd",mev:"ev",mst:"st",met:"et",mb1:"b1",mb2:"b2"},order=["mst","met","mb1","mb2"];
-    for(const[id,k]of Object.entries(map)){const el=$(id);if(!el)continue;el.oninput=()=>{if(id!=="mev"&&id!=="msd")el.value=colonize(el.value);if(id==="msd")el.value=el.value.replace(/[^\d]/g,"").slice(0,4);d.raw[k]=el.value;$("msum").textContent=manualSum(d);setErr("");const i=order.indexOf(id);if(i>=0&&i<order.length-1&&el.value.replace(/[^\d]/g,"").length===4)$(order[i+1]).focus()};if(id==="msd")el.onchange=()=>render()}
+    for(const[id,k]of Object.entries(map)){const el=$(id);if(!el)continue;el.oninput=()=>{if(id!=="mev"&&id!=="msd")el.value=colonize(el.value);if(id==="msd")el.value=el.value.replace(/[^\d]/g,"").slice(0,4);d.raw[k]=el.value;$("msum").textContent=manualSum(d);setErr("");if(id==="msd"||id==="mev")refreshManualChips(d);const i=order.indexOf(id);if(i>=0&&i<order.length-1&&el.value.replace(/[^\d]/g,"").length===4)$(order[i+1]).focus()}}
   }
 }
 document.addEventListener("click",e=>{
